@@ -33,6 +33,7 @@ export async function POST(req: NextRequest) {
       isDirectMovie: result.isDirectMovie || false,
       fileSize: result.fileSize || '',
       folderData: result.folderData,
+      fileType: result.fileType || 'video',
     })
 
   } catch (err: any) {

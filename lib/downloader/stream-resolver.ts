@@ -19,6 +19,8 @@ export interface StreamResult {
   isMaintenance?: boolean
   maintenanceMessage?: string
   folderData?: FolderResult
+  fileType?: 'video' | 'audio' | 'image'
+  isImage?: boolean
 }
 
 // Clean escaped HTML / unicode characters in scraped URLs
@@ -47,6 +49,91 @@ export function isDirectVideoUrl(url: string): boolean {
     )
   } catch {
     return false
+  }
+}
+
+// Check if a URL points directly to an image file
+export function isDirectImageUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url)
+    const pathname = parsed.pathname.toLowerCase()
+    return (
+      pathname.endsWith('.jpg') ||
+      pathname.endsWith('.jpeg') ||
+      pathname.endsWith('.png') ||
+      pathname.endsWith('.webp') ||
+      pathname.endsWith('.gif') ||
+      pathname.endsWith('.avif') ||
+      pathname.endsWith('.bmp') ||
+      pathname.endsWith('.svg') ||
+      parsed.hostname.includes('pbs.twimg.com') ||
+      parsed.hostname.includes('i.redd.it') ||
+      parsed.hostname.includes('i.imgur.com')
+    )
+  } catch {
+    return false
+  }
+}
+
+// Inspect a direct image URL via HTTP HEAD
+export async function inspectDirectImage(url: string): Promise<StreamResult | null> {
+  try {
+    const headRes = await fetch(url, {
+      method: 'HEAD',
+      headers: {
+        'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      },
+    })
+
+    const contentType = (headRes.headers.get('content-type') || '').toLowerCase()
+    const contentLength = headRes.headers.get('content-length')
+
+    const isImage = contentType.startsWith('image/') || isDirectImageUrl(url)
+    if (!isImage || !headRes.ok) {
+      return null
+    }
+
+    let sizeStr = ''
+    if (contentLength) {
+      const bytes = parseInt(contentLength, 10)
+      if (!isNaN(bytes)) {
+        sizeStr = (bytes / (1024 * 1024)).toFixed(2) + ' MB'
+      }
+    }
+
+    const pathname = new URL(url).pathname
+    const rawName = pathname.split('/').pop() || 'image.jpg'
+    const cleanName = decodeURIComponent(rawName).slice(0, 40)
+
+    return {
+      title: cleanName || 'High Resolution Image',
+      platform: 'Direct Image',
+      thumbnail: url,
+      uploader: 'Image Source',
+      qualities: ['Original HD Image', 'JPEG / PNG'],
+      streamUrl: url,
+      downloadUrl: url,
+      fileSize: sizeStr,
+      fileType: 'image',
+    }
+  } catch {
+    if (isDirectImageUrl(url)) {
+      const pathname = new URL(url).pathname
+      const rawName = pathname.split('/').pop() || 'image.jpg'
+      const cleanName = decodeURIComponent(rawName).slice(0, 40)
+      return {
+        title: cleanName || 'High Resolution Image',
+        platform: 'Direct Image',
+        thumbnail: url,
+        uploader: 'Image Source',
+        qualities: ['Original HD Image'],
+        streamUrl: url,
+        downloadUrl: url,
+        fileType: 'image',
+      }
+    }
+    return null
   }
 }
 
@@ -224,6 +311,20 @@ export async function resolveFacebook(url: string): Promise<StreamResult | null>
           streamUrl: selectedUrl,
           downloadUrl: selectedUrl,
           audioUrl: undefined,
+        }
+      }
+
+      // If post is a Facebook Photo / Image instead of video
+      if (!selectedUrl && thumbnail && thumbnail.startsWith('http')) {
+        return {
+          title: cleanTitle && cleanTitle !== 'Facebook' ? cleanTitle : 'Facebook Photo',
+          platform: 'Facebook',
+          thumbnail,
+          uploader: 'Facebook Creator',
+          qualities: ['High Resolution Image', 'Standard JPEG'],
+          streamUrl: thumbnail,
+          downloadUrl: thumbnail,
+          fileType: 'image',
         }
       }
     }
@@ -406,6 +507,29 @@ export async function resolveInstagram(url: string): Promise<StreamResult | null
             streamUrl: videoUrl,
             downloadUrl: videoUrl,
             audioUrl: videoUrl,
+          }
+        }
+
+        // Instagram Photo / Image extraction
+        const imgMatch =
+          thumbMatch ||
+          html.match(/<img[^>]+class="[^"]*EmbeddedMediaImage[^"]*"[^>]+src="([^">]+)"/i) ||
+          html.match(/<img[^>]+src="([^">]+)"[^>]+class="[^"]*EmbeddedMediaImage/i) ||
+          html.match(/<meta\s+property="og:image"\s+content="([^"]+)"/i)
+
+        if (imgMatch) {
+          const imgUrl = cleanEscapedUrl(imgMatch[1])
+          if (imgUrl && imgUrl.startsWith('http')) {
+            return {
+              title: titleMatch ? titleMatch[1].replace(/<[^>]+>/g, '').trim().slice(0, 60) : `Instagram Photo (${shortcode || 'Post'})`,
+              platform: 'Instagram',
+              thumbnail: imgUrl,
+              uploader: 'Instagram Creator',
+              qualities: ['High Resolution Image', 'Standard JPEG'],
+              streamUrl: imgUrl,
+              downloadUrl: imgUrl,
+              fileType: 'image',
+            }
           }
         }
       }
@@ -1207,6 +1331,12 @@ export async function resolveMediaUrl(url: string): Promise<StreamResult> {
     if (directResult) return directResult
   }
 
+  // 2b. Direct Image file inspection
+  if (isDirectImageUrl(trimmedUrl)) {
+    const directImg = await inspectDirectImage(trimmedUrl)
+    if (directImg) return directImg
+  }
+
   // 3. TikTok Dedicated High-Speed Resolver
   if (trimmedUrl.includes('tiktok.com')) {
     const tiktokResult = await resolveTikTok(trimmedUrl)
@@ -1266,6 +1396,10 @@ export async function resolveMediaUrl(url: string): Promise<StreamResult> {
   // 12. Final Direct Video Inspect fallback
   const genericInspect = await inspectDirectVideo(trimmedUrl)
   if (genericInspect) return genericInspect
+
+  // 13. Final Direct Image Inspect fallback
+  const genericImg = await inspectDirectImage(trimmedUrl)
+  if (genericImg) return genericImg
 
   throw new Error('Unable to resolve media from this link. Please ensure the link is public and accessible.')
 }

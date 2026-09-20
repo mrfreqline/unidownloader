@@ -63,6 +63,7 @@ export default function Home() {
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [isDownloading, setIsDownloading] = useState(false)
   const [error, setError] = useState('')
+  const [inspectCount, setInspectCount] = useState(0)
   const [analyzedMedia, setAnalyzedMedia] = useState<AnalyzedMedia | null>(null)
   const [folderData, setFolderData] = useState<FolderResult | null>(null)
   const [downloadSuccessMsg, setDownloadSuccessMsg] = useState<string | null>(null)
@@ -338,7 +339,12 @@ export default function Home() {
   }
 
   const handleAnalyze = async () => {
-    triggerAdRedirect()
+    // First inspect has NO ad. Redirects to ad only on 2nd inspect and onwards
+    if (inspectCount >= 1) {
+      triggerAdRedirect()
+    }
+    setInspectCount(prev => prev + 1)
+
     setError('')
     setDownloadSuccessMsg(null)
     setDirectDownloadLink(null)
@@ -450,7 +456,7 @@ export default function Home() {
       if (mediaType === 'image') {
         endpoint = '/api/thumbnail'
         payload = {
-          thumbnailUrl: analyzedMedia.thumbnail,
+          thumbnailUrl: downloadUrl || analyzedMedia.downloadUrl || analyzedMedia.thumbnail,
           title: analyzedMedia.title,
         }
       }
@@ -524,10 +530,11 @@ export default function Home() {
       } else {
         const data = await res.json()
         if (data.redirectUrl) {
-          setDirectDownloadLink({ url: data.redirectUrl, filename: data.filename || 'media.mp4' })
+          const defaultFilename = mediaType === 'image' ? 'image.jpg' : mediaType === 'audio' ? 'audio.mp3' : 'media.mp4'
+          setDirectDownloadLink({ url: data.redirectUrl, filename: data.filename || defaultFilename })
           const a = document.createElement('a')
           a.href = data.redirectUrl
-          a.download = data.filename || 'media.mp4'
+          a.download = data.filename || defaultFilename
           a.target = '_blank'
           document.body.appendChild(a)
           a.click()

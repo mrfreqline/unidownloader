@@ -2,31 +2,58 @@ import { NextRequest, NextResponse } from 'next/server'
 
 export async function POST(req: NextRequest) {
   try {
-    const { thumbnailUrl, title } = await req.json()
+    const body = await req.json().catch(() => ({}))
+    const targetUrl = body.thumbnailUrl || body.imageUrl || body.url
+    const title = body.title || 'image'
 
-    if (!thumbnailUrl) {
-      return NextResponse.json({ error: 'No thumbnail URL provided' }, { status: 400 })
+    if (!targetUrl) {
+      return NextResponse.json({ error: 'No image URL provided' }, { status: 400 })
     }
 
-    const response = await fetch(thumbnailUrl)
-    if (!response.ok) {
-      return NextResponse.json({ error: 'Failed to fetch thumbnail image' }, { status: 500 })
+    const safeTitle = (title || 'image').replace(/[^\w\s.-]/gi, '_').slice(0, 50)
+
+    try {
+      const response = await fetch(targetUrl, {
+        headers: {
+          'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+          'Referer': targetUrl.includes('instagram.com')
+            ? 'https://www.instagram.com/'
+            : targetUrl.includes('facebook.com')
+            ? 'https://www.facebook.com/'
+            : '',
+        },
+      })
+
+      if (!response.ok) {
+        // Fallback to direct client download if remote CDN blocks server proxy
+        return NextResponse.json({ redirectUrl: targetUrl, filename: `${safeTitle}.jpg` })
+      }
+
+      const contentType = response.headers.get('content-type') || 'image/jpeg'
+      let ext = 'jpg'
+      if (contentType.includes('png')) ext = 'png'
+      else if (contentType.includes('webp')) ext = 'webp'
+      else if (contentType.includes('gif')) ext = 'gif'
+      else if (contentType.includes('svg')) ext = 'svg'
+
+      const fileName = `${safeTitle}.${ext}`
+      const buffer = Buffer.from(await response.arrayBuffer())
+
+      return new NextResponse(buffer, {
+        headers: {
+          'Content-Type': contentType,
+          'Content-Disposition': `attachment; filename="${fileName}"`,
+          'Content-Length': buffer.length.toString(),
+        },
+      })
+    } catch {
+      // Direct CDN download redirect fallback
+      return NextResponse.json({ redirectUrl: targetUrl, filename: `${safeTitle}.jpg` })
     }
-
-    const buffer = Buffer.from(await response.arrayBuffer())
-    const safeTitle = (title || 'cover').replace(/[^\w\s.-]/gi, '_').slice(0, 50)
-    const fileName = `${safeTitle}_cover.jpg`
-
-    return new NextResponse(buffer, {
-      headers: {
-        'Content-Type': 'image/jpeg',
-        'Content-Disposition': `attachment; filename="${fileName}"`,
-        'Content-Length': buffer.length.toString(),
-      },
-    })
-
   } catch (err: any) {
-    console.error('[Thumbnail Error]:', err)
-    return NextResponse.json({ error: 'Failed to download cover image.' }, { status: 500 })
+    console.error('[Image Download Route Error]:', err)
+    return NextResponse.json({ error: 'Failed to download image.' }, { status: 500 })
   }
 }

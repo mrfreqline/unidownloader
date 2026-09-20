@@ -102,9 +102,14 @@ export default function MediaCard({
   const canAfford = true
 
   const handleDownloadClick = () => {
-
-    const downloadType = activeTab === 'audio' ? 'audio' : activeTab === 'image' ? 'image' : 'video'
-    const targetUrl = activeTab === 'audio' && media.audioUrl ? media.audioUrl : media.downloadUrl
+    const downloadType =
+      activeTab === 'audio' ? 'audio' : activeTab === 'image' || media.fileType === 'image' ? 'image' : 'video'
+    const targetUrl =
+      activeTab === 'audio' && media.audioUrl
+        ? media.audioUrl
+        : activeTab === 'image' || media.fileType === 'image'
+        ? (media.downloadUrl || media.thumbnail)
+        : media.downloadUrl
 
     onDownload(
       activeTab === 'video' || activeTab === 'watch' ? selectedQuality : activeTab === 'audio' ? 'mp3' : 'original',
@@ -218,50 +223,54 @@ export default function MediaCard({
           </button>
         )}
 
-        <button
-          type="button"
-          onClick={() => setActiveTab('video')}
-          className={`flex-1 py-2 px-1 rounded-lg flex items-center justify-center gap-1 sm:gap-2 transition touch-manipulation cursor-pointer ${
-            activeTab === 'video'
-              ? 'bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 shadow-xs'
-              : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100'
-          }`}
-        >
-          <Film className="w-3.5 h-3.5 shrink-0" />
-          <span className="sm:hidden">Video</span>
-          <span className="hidden sm:inline">Video Download</span>
-        </button>
+        {media.fileType !== 'image' && (
+          <button
+            type="button"
+            onClick={() => setActiveTab('video')}
+            className={`flex-1 py-2 px-1 rounded-lg flex items-center justify-center gap-1 sm:gap-2 transition touch-manipulation cursor-pointer ${
+              activeTab === 'video'
+                ? 'bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 shadow-xs'
+                : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100'
+            }`}
+          >
+            <Film className="w-3.5 h-3.5 shrink-0" />
+            <span className="sm:hidden">Video</span>
+            <span className="hidden sm:inline">Video Download</span>
+          </button>
+        )}
 
-        <button
-          type="button"
-          onClick={() => setActiveTab('audio')}
-          className={`flex-1 py-2 px-1 rounded-lg flex items-center justify-center gap-1 sm:gap-2 transition touch-manipulation cursor-pointer ${
-            activeTab === 'audio'
-              ? 'bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 shadow-xs'
-              : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100'
-          }`}
-        >
-          <Music className="w-3.5 h-3.5 shrink-0" />
-          <span className="sm:hidden">Audio</span>
-          <span className="hidden sm:inline">Audio Only</span>
-          <span className="text-[9px] sm:text-[10px] font-mono px-1 rounded-xs bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 font-bold">
-            FREE
-          </span>
-        </button>
+        {media.fileType !== 'image' && (
+          <button
+            type="button"
+            onClick={() => setActiveTab('audio')}
+            className={`flex-1 py-2 px-1 rounded-lg flex items-center justify-center gap-1 sm:gap-2 transition touch-manipulation cursor-pointer ${
+              activeTab === 'audio'
+                ? 'bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 shadow-xs'
+                : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100'
+            }`}
+          >
+            <Music className="w-3.5 h-3.5 shrink-0" />
+            <span className="sm:hidden">Audio</span>
+            <span className="hidden sm:inline">Audio Only</span>
+            <span className="text-[9px] sm:text-[10px] font-mono px-1 rounded-xs bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 font-bold">
+              FREE
+            </span>
+          </button>
+        )}
 
-        {media.thumbnail && (
+        {(media.thumbnail || media.fileType === 'image') && (
           <button
             type="button"
             onClick={() => setActiveTab('image')}
             className={`flex-1 py-2 px-1 rounded-lg flex items-center justify-center gap-1 sm:gap-2 transition touch-manipulation cursor-pointer ${
               activeTab === 'image'
-                ? 'bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 shadow-xs'
+                ? 'bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 shadow-xs font-bold'
                 : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100'
             }`}
           >
             <ImageIcon className="w-3.5 h-3.5 shrink-0" />
-            <span className="sm:hidden">Cover</span>
-            <span className="hidden sm:inline">Cover</span>
+            <span className="sm:hidden">{media.fileType === 'image' ? 'Image' : 'Cover'}</span>
+            <span className="hidden sm:inline">{media.fileType === 'image' ? 'Image (HD)' : 'Cover Image'}</span>
             <span className="text-[9px] sm:text-[10px] font-mono px-1 rounded-xs bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 font-bold">
               FREE
             </span>
@@ -404,13 +413,13 @@ export default function MediaCard({
               <Download className="w-4 h-4 stroke-[2.5]" />
               <span>
                 Download{' '}
-                {activeTab === 'video' || activeTab === 'watch'
+                {activeTab === 'image' || media.fileType === 'image'
+                  ? 'High-Res Image'
+                  : activeTab === 'video' || activeTab === 'watch'
                   ? media.isDirectMovie
                     ? 'Movie File'
                     : `${selectedQuality} Video`
-                  : activeTab === 'audio'
-                  ? 'Audio MP3'
-                  : 'Cover Image'}
+                  : 'Audio MP3'}
                 {' (Free)'}
               </span>
             </>

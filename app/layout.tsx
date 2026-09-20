@@ -209,11 +209,6 @@ export default function RootLayout({
           async
           src="https://pl31434136.profitableratecpmnetwork.com/aa/6d/e9/aa6de9c30e965976a5448d3827e285f6.js"
         />
-        {/* Adsterra Popunder */}
-        <script
-          async
-          src="https://pl31434135.profitableratecpmnetwork.com/af/66/59/af665908c935bcf8f0138db229968367.js"
-        />
       </head>
       <body className="antialiased overflow-x-hidden selection:bg-zinc-800 selection:text-zinc-100">
         {children}
