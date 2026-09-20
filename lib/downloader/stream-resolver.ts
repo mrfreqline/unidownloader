@@ -801,6 +801,393 @@ export async function resolveTwitter(url: string): Promise<StreamResult | null> 
   return null
 }
 
+// 6. Snapchat Dedicated Resolver (Spotlight & Stories)
+export async function resolveSnapchat(url: string): Promise<StreamResult | null> {
+  try {
+    const res = await fetch(url, {
+      headers: {
+        'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9',
+      },
+      signal: AbortSignal.timeout(10000),
+    })
+
+    if (!res.ok) return null
+    const html = await res.text()
+
+    // 1. Check __NEXT_DATA__
+    const nextDataMatch = html.match(/<script id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/)
+    let videoUrl = ''
+    let thumbUrl = ''
+    let title = ''
+
+    if (nextDataMatch) {
+      try {
+        const parsed = JSON.parse(nextDataMatch[1])
+        const jsonStr = JSON.stringify(parsed)
+
+        const videoMatch =
+          jsonStr.match(/https:\\?\/\\?\/cf-st\.sc-cdn\.net\\?\/d\\?\/[a-zA-Z0-9._-]+\.27\.[a-zA-Z0-9._-]+[^"'\\]*/i) ||
+          jsonStr.match(/https:\\?\/\\?\/[^"'\\]*(?:cf-st\.sc-cdn\.net|media\.snapchat\.com)[^"'\\]*SpotlightSharing[^"'\\]*/i) ||
+          jsonStr.match(/https:\\?\/\\?\/[^"'\\]*(?:cf-st\.sc-cdn\.net|media\.snapchat\.com)[^"'\\]*\.mp4[^"'\\]*/i)
+
+        if (videoMatch) {
+          videoUrl = videoMatch[0].replace(/\\u0026/g, '&').replace(/\\\//g, '/')
+        }
+
+        const thumbMatch = jsonStr.match(
+          /https:\\?\/\\?\/cf-st\.sc-cdn\.net\\?\/d\\?\/[a-zA-Z0-9._-]+\.256\.[a-zA-Z0-9._-]+[^"'\\]*/i
+        )
+        if (thumbMatch) {
+          thumbUrl = thumbMatch[0].replace(/\\u0026/g, '&').replace(/\\\//g, '/')
+        }
+
+        title =
+          parsed.props?.pageProps?.curatedStoryResponse?.storyMetadata?.title ||
+          parsed.props?.pageProps?.spotlightHighlight?.title ||
+          ''
+      } catch {}
+    }
+
+    // 2. Fallback regex on HTML directly
+    if (!videoUrl) {
+      const vMatch =
+        html.match(/https:\/\/(?:cf-st\.sc-cdn\.net|media\.snapchat\.com)\/[^"'\s]*\.(?:mp4|27\.)[^"'\s]*/i) ||
+        html.match(/https:\/\/cf-st\.sc-cdn\.net\/d\/[^"'\s]*SpotlightSharing[^"'\s]*/i)
+      if (vMatch) videoUrl = vMatch[0].replace(/&amp;/g, '&')
+    }
+
+    if (!title) {
+      const tMatch = html.match(/<meta\s+property=["']og:title["']\s+content=["']([^"']+)["']/i)
+      title = tMatch ? tMatch[1] : 'Snapchat Spotlight Video'
+    }
+
+    if (!thumbUrl) {
+      const imMatch = html.match(/<meta\s+property=["']og:image["']\s+content=["']([^"']+)["']/i)
+      thumbUrl = imMatch ? imMatch[1] : ''
+    }
+
+    if (videoUrl) {
+      return {
+        title: title.slice(0, 60),
+        thumbnail: thumbUrl,
+        downloadUrl: videoUrl,
+        streamUrl: videoUrl,
+        platform: 'Snapchat',
+        qualities: ['Original HD MP4', 'Audio MP3'],
+      }
+    }
+  } catch (err) {
+    console.warn('[Snapchat Resolver Error]:', err)
+  }
+  return null
+}
+
+// 7. Twitch Dedicated Resolver (Clips & VODs)
+export async function resolveTwitch(url: string): Promise<StreamResult | null> {
+  try {
+    let slug = ''
+    const cleanUrl = url.trim()
+
+    if (cleanUrl.includes('clips.twitch.tv/')) {
+      slug = cleanUrl.split('clips.twitch.tv/')[1]?.split(/[?#]/)[0] || ''
+    } else if (cleanUrl.includes('/clip/')) {
+      slug = cleanUrl.split('/clip/')[1]?.split(/[?#]/)[0] || ''
+    }
+
+    if (!slug) return null
+
+    // Engine A: Twitch Embed page inspection
+    try {
+      const embedRes = await fetch(`https://clips.twitch.tv/embed?clip=${slug}&parent=localhost`, {
+        headers: {
+          'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        },
+        signal: AbortSignal.timeout(6000),
+      })
+
+      if (embedRes.ok) {
+        const html = await embedRes.text()
+        const imgMatch =
+          html.match(/<meta\s+(?:property|name)=["'](?:og:image|twitter:image)["']\s+content=["']([^"']+)["']/i)
+        const titleMatch =
+          html.match(/<meta\s+property=["']og:title["']\s+content=["']([^"']+)["']/i) ||
+          html.match(/<title>([^<]+)<\/title>/i)
+
+        if (imgMatch && imgMatch[1]) {
+          const thumbUrl = imgMatch[1]
+          const mp4Url = thumbUrl.replace(/-preview-.*\.jpg$/i, '.mp4')
+          return {
+            title: titleMatch ? titleMatch[1].replace(/ - Twitch$/, '') : `Twitch Clip (${slug})`,
+            thumbnail: thumbUrl,
+            streamUrl: mp4Url,
+            downloadUrl: mp4Url,
+            platform: 'Twitch',
+            qualities: ['1080p Full HD', '720p HD', 'Audio MP3'],
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('[Twitch Embed Warn]:', e)
+    }
+
+    // Engine B: Twitch GQL query
+    try {
+      const query = {
+        query: `query {
+          clip(slug: "${slug}") {
+            title
+            thumbnailURL
+            durationSeconds
+            broadcaster { displayName }
+            videoQualities {
+              quality
+              sourceURL
+            }
+          }
+        }`,
+      }
+
+      const gqlRes = await fetch('https://gql.twitch.tv/gql', {
+        method: 'POST',
+        headers: {
+          'Client-Id': 'kimne78kx3ncx6brgo4mv6wki5h1ko',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(query),
+        signal: AbortSignal.timeout(5000),
+      })
+
+      if (gqlRes.ok) {
+        const d = await gqlRes.json()
+        const clip = d?.data?.clip
+        if (clip) {
+          const qualities = clip.videoQualities || []
+          const best = qualities[0]
+          const streamUrl = best?.sourceURL || clip.thumbnailURL?.replace(/-preview-.*\.jpg$/, '.mp4')
+          if (streamUrl) {
+            return {
+              title: clip.title || `Twitch Clip (${slug})`,
+              thumbnail: clip.thumbnailURL,
+              duration: clip.durationSeconds ? `${clip.durationSeconds}s` : undefined,
+              uploader: clip.broadcaster?.displayName || 'Twitch Streamer',
+              platform: 'Twitch',
+              qualities: qualities.map((q: any) => `${q.quality}p HD`).concat(['Audio MP3']),
+              streamUrl,
+              downloadUrl: streamUrl,
+            }
+          }
+        }
+      }
+    } catch {}
+  } catch (err) {
+    console.warn('[Twitch Resolver Error]:', err)
+  }
+  return null
+}
+
+// 8. Reddit Dedicated Resolver
+export async function resolveReddit(url: string): Promise<StreamResult | null> {
+  try {
+    const urlObj = new URL(url)
+    const pathname = urlObj.pathname
+
+    // Engine A: vxreddit crawler proxy
+    try {
+      const vxUrl = `https://vxreddit.com${pathname}`
+      const vxRes = await fetch(vxUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (compatible; Discordbot/2.0; +https://discord.app)',
+        },
+        signal: AbortSignal.timeout(7000),
+        redirect: 'follow',
+      })
+
+      if (vxRes.ok) {
+        const html = await vxRes.text()
+        const videoMatch =
+          html.match(/<meta\s+(?:property|name)=["'](?:og:video(?::secure_url)?|twitter:player:stream)["']\s+content=["']([^"']+)["']/i)
+        const titleMatch = html.match(/<meta\s+(?:property|name)=["']og:title["']\s+content=["']([^"']+)["']/i)
+        const thumbMatch = html.match(/<meta\s+(?:property|name)=["']og:image["']\s+content=["']([^"']+)["']/i)
+
+        if (videoMatch && videoMatch[1]) {
+          const videoUrl = videoMatch[1].replace(/&amp;/g, '&')
+          return {
+            title: titleMatch ? titleMatch[1].slice(0, 70) : 'Reddit Video',
+            thumbnail: thumbMatch ? thumbMatch[1].replace(/&amp;/g, '&') : '',
+            downloadUrl: videoUrl,
+            streamUrl: videoUrl,
+            platform: 'Reddit',
+            qualities: ['HD Video', 'Standard Video', 'Audio MP3'],
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('[Reddit vxreddit warn]:', e)
+    }
+
+    // Engine B: RapidSave proxy inspection
+    try {
+      const rsUrl = `https://rapidsave.com/info?url=${encodeURIComponent(url)}`
+      const rsRes = await fetch(rsUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        },
+        signal: AbortSignal.timeout(8000),
+      })
+      if (rsRes.ok) {
+        const rsHtml = await rsRes.text()
+        const dlBtn =
+          rsHtml.match(/href=["'](https?:\/\/[^"']*(?:rapidsave\.com|redditsave\.com)[^"']*download[^"']*)["']/i) ||
+          rsHtml.match(/href=["'](https?:\/\/[^"']+\.mp4[^"']*)["']/i)
+        const titleMatch =
+          rsHtml.match(/class=["']font-bold[^"']*["']>([^<]+)<\//i) ||
+          rsHtml.match(/<title>([^<]+)<\/title>/i)
+
+        if (dlBtn && dlBtn[1]) {
+          return {
+            title: titleMatch ? titleMatch[1].trim().slice(0, 70) : 'Reddit Video',
+            downloadUrl: dlBtn[1],
+            streamUrl: dlBtn[1],
+            platform: 'Reddit',
+            qualities: ['HD Video', 'Audio MP3'],
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('[Reddit RapidSave warn]:', e)
+    }
+  } catch (err) {
+    console.warn('[Reddit Resolver Error]:', err)
+  }
+  return null
+}
+
+// 9. Universal Web Movie & Embedded Video Stream Extractor for Any Site
+export async function resolveWebMovie(url: string): Promise<StreamResult | null> {
+  try {
+    const res = await fetch(url, {
+      headers: {
+        'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9',
+      },
+      signal: AbortSignal.timeout(12000),
+      redirect: 'follow',
+    })
+
+    if (!res.ok) return null
+    const contentType = (res.headers.get('content-type') || '').toLowerCase()
+
+    // If URL directly serves a video file
+    if (contentType.startsWith('video/') || contentType.includes('mpegurl') || contentType.includes('octet-stream')) {
+      const contentLength = res.headers.get('content-length')
+      let sizeStr = ''
+      if (contentLength) {
+        const bytes = parseInt(contentLength, 10)
+        if (!isNaN(bytes)) {
+          sizeStr =
+            bytes >= 1024 * 1024 * 1024
+              ? `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`
+              : `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+        }
+      }
+      const rawName = new URL(url).pathname.split('/').pop() || 'Movie Stream'
+      return {
+        title: decodeURIComponent(rawName).replace(/\.[a-z0-9]+$/i, '').replace(/[._-]/g, ' ') || 'Movie Stream',
+        platform: 'Direct Movie Stream',
+        qualities: ['Original Quality', 'HD Stream', 'Audio Only'],
+        streamUrl: url,
+        downloadUrl: url,
+        isDirectMovie: true,
+        fileSize: sizeStr || 'High Bitrate Stream',
+      }
+    }
+
+    // Parse HTML web page containing a video player
+    const html = await res.text()
+    const cleanStr = (s: string) =>
+      s ? s.replace(/\\u0026/g, '&').replace(/\\\//g, '/').replace(/&amp;/g, '&').trim() : ''
+
+    // 1. OpenGraph / Twitter video meta tags
+    const ogVideo =
+      html.match(/<meta\s+(?:property|name)=["'](?:og:video(?::secure_url)?|og:video:url|twitter:player:stream)["']\s+content=["']([^"']+)["']/i) ||
+      html.match(/content=["']([^"']+)["']\s+<meta\s+(?:property|name)=["'](?:og:video(?::secure_url)?|og:video:url|twitter:player:stream)["']/i)
+
+    // 2. HTML5 <video> and <source> tags
+    const videoTag =
+      html.match(/<video[^>]*\ssrc=["']([^"']+)["']/i) ||
+      html.match(/<source[^>]*\ssrc=["']([^"']+\.(?:mp4|webm|mkv|m3u8)[^"']*)["']/i) ||
+      html.match(/<source[^>]*\ssrc=["']([^"']+)["']/i)
+
+    // 3. Player configs / script JSON
+    const scriptVideo =
+      html.match(/(?:file|source|src|videoUrl|hlsUrl|streamUrl)["']?\s*:\s*["'](https?:\\?\/\\?\/[^"']+\.(?:mp4|webm|mkv|m3u8)[^"']*)["']/i) ||
+      html.match(/["'](https?:\\?\/\\?\/[^"']+\.(?:mp4|mkv|webm|m3u8)(?:\?[^"']*)?)["']/i)
+
+    let rawStreamUrl = ogVideo?.[1] || videoTag?.[1] || scriptVideo?.[1]
+
+    // 4. Iframe embed check (e.g. streamtape, doodstream, vidsrc, player embeds)
+    if (!rawStreamUrl) {
+      const iframeMatch = html.match(
+        /<iframe[^>]*\ssrc=["'](https?:\\?\/\\?\/[^"']*(?:embed|player|stream|video)[^"']*)["']/i
+      )
+      if (iframeMatch) {
+        try {
+          const iframeUrl = cleanStr(iframeMatch[1])
+          const subRes = await fetch(new URL(iframeUrl, url).toString(), {
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+              'Referer': url,
+            },
+            signal: AbortSignal.timeout(6000),
+          })
+          if (subRes.ok) {
+            const subHtml = await subRes.text()
+            const subVideo = subHtml.match(/["'](https?:\\?\/\\?\/[^"']+\.(?:mp4|mkv|webm|m3u8)[^"']*)["']/i)
+            if (subVideo) rawStreamUrl = subVideo[1]
+          }
+        } catch {}
+      }
+    }
+
+    if (!rawStreamUrl) return null
+
+    rawStreamUrl = cleanStr(rawStreamUrl)
+    const absStreamUrl = new URL(rawStreamUrl, url).toString()
+
+    // Title
+    const titleMatch =
+      html.match(/<meta\s+property=["']og:title["']\s+content=["']([^"']+)["']/i) ||
+      html.match(/<title[^>]*>([^<]+)<\/title>/i)
+    const title = titleMatch ? titleMatch[1].replace(/ - [^-]+$/, '').trim() : 'Web Movie Stream'
+
+    // Thumbnail / Poster
+    const thumbMatch =
+      html.match(/<meta\s+property=["']og:image["']\s+content=["']([^"']+)["']/i) ||
+      html.match(/poster=["']([^"']+)["']/i)
+    const thumbnail = thumbMatch ? new URL(cleanStr(thumbMatch[1]), url).toString() : ''
+
+    return {
+      title,
+      thumbnail,
+      downloadUrl: absStreamUrl,
+      streamUrl: absStreamUrl,
+      platform: 'Web Movie Stream',
+      qualities: ['Original Quality', 'HD Web Stream', 'Audio Only'],
+      isDirectMovie: true,
+      fileSize: 'High Bitrate Stream',
+    }
+  } catch (err) {
+    console.warn('[Web Movie Extractor Error]:', err)
+  }
+  return null
+}
+
 // Universal Resolver orchestrator
 export async function resolveMediaUrl(url: string): Promise<StreamResult> {
   const trimmedUrl = sanitizeMediaUrl(url)
@@ -846,9 +1233,32 @@ export async function resolveMediaUrl(url: string): Promise<StreamResult> {
     if (twitterResult) return twitterResult
   }
 
-  // 7. Fallback inspection ONLY for verified direct video streams (strictly non-HTML)
+  // 7. Snapchat Dedicated Resolver (Spotlight & Stories)
+  if (trimmedUrl.includes('snapchat.com')) {
+    const snapResult = await resolveSnapchat(trimmedUrl)
+    if (snapResult) return snapResult
+  }
+
+  // 8. Twitch Dedicated Resolver (Clips & VODs)
+  if (trimmedUrl.includes('twitch.tv')) {
+    const twitchResult = await resolveTwitch(trimmedUrl)
+    if (twitchResult) return twitchResult
+  }
+
+  // 9. Reddit Dedicated Resolver
+  if (trimmedUrl.includes('reddit.com') || trimmedUrl.includes('redd.it')) {
+    const redditResult = await resolveReddit(trimmedUrl)
+    if (redditResult) return redditResult
+  }
+
+  // 10. Universal Web Movie & Embedded Video Stream Extractor for Any Site
+  const movieResult = await resolveWebMovie(trimmedUrl)
+  if (movieResult) return movieResult
+
+  // 11. Final Direct Video Inspect fallback
   const genericInspect = await inspectDirectVideo(trimmedUrl)
   if (genericInspect) return genericInspect
 
   throw new Error('Unable to resolve media from this link. Please ensure the link is public and accessible.')
 }
+
