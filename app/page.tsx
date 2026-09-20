@@ -11,6 +11,7 @@ import { supabase } from '@/lib/supabase'
 import MagicProgressBar from '@/components/MagicProgressBar'
 import FolderExplorer from '@/components/FolderExplorer'
 import AdBanner from '@/components/AdBanner'
+import SeoContent from '@/components/SeoContent'
 import { FolderResult } from '@/lib/downloader/terabox-resolver'
 import {
   Link2,
@@ -857,6 +858,9 @@ export default function Home() {
             </p>
           </div>
         </div>
+
+        {/* SEO Informational & FAQ Section */}
+        <SeoContent />
 
         {/* Bottom Sponsor Ad Banner */}
         <AdBanner slot="bottom" />
