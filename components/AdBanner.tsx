@@ -91,7 +91,7 @@ export default function AdBanner({ slot = 'middle', className = '', format = 're
               height={90}
               title={`Adsterra Desktop ${slot}`}
               className="border-0 overflow-hidden max-w-full"
-              loading="lazy"
+              loading="eager"
               scrolling="no"
             />
           </div>
@@ -106,7 +106,7 @@ export default function AdBanner({ slot = 'middle', className = '', format = 're
               height={50}
               title={`Adsterra Mobile ${slot}`}
               className="border-0 overflow-hidden max-w-full"
-              loading="lazy"
+              loading="eager"
               scrolling="no"
             />
           </div>

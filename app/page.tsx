@@ -71,6 +71,19 @@ export default function Home() {
   const [directDownloadLink, setDirectDownloadLink] = useState<{ url: string; filename: string } | null>(null)
 
   useEffect(() => {
+    // When media is analyzed (1st inspect is done), activate popunder script so that any touch / interaction triggers the ad
+    if (analyzedMedia && typeof document !== 'undefined') {
+      if (!document.getElementById('adsterra-popunder')) {
+        const s = document.createElement('script')
+        s.id = 'adsterra-popunder'
+        s.type = 'text/javascript'
+        s.src = '//pl31434173.profitableratecpmnetwork.com/a4/16/ee/a416ee454471f4967396c21e6cfafe8e.js'
+        document.body.appendChild(s)
+      }
+    }
+  }, [analyzedMedia])
+
+  useEffect(() => {
     // Detect mobile in-app webview (Instagram, TikTok, Facebook, etc.)
     if (typeof window !== 'undefined') {
       const ua = navigator.userAgent || navigator.vendor || (window as any).opera || ''
@@ -921,6 +934,9 @@ export default function Home() {
 
         {/* Bottom Sponsor Ad Banner */}
         <AdBanner slot="bottom" />
+
+        {/* Adsterra Native Banner Container */}
+        <div id="container-aa6de9c30e965976a5448d3827e285f6" className="w-full max-w-4xl mx-auto my-3 text-center" />
 
       </main>
 
