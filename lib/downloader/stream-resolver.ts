@@ -21,6 +21,7 @@ export interface StreamResult {
   folderData?: FolderResult
   fileType?: 'video' | 'audio' | 'image'
   isImage?: boolean
+  formats?: Array<{ quality?: string | number; label?: string; url: string; type?: string }>
 }
 
 // Clean escaped HTML / unicode characters in scraped URLs
@@ -686,6 +687,12 @@ export async function resolveYouTube(url: string): Promise<StreamResult | null> 
             uploader: 'YouTube Creator',
             platform: 'YouTube',
             qualities,
+            formats: videoFormats.map((f: any) => ({
+              quality: f.quality,
+              label: f.label || (f.quality ? `${f.quality}p` : 'MP4'),
+              url: f.url,
+              type: f.type,
+            })),
             streamUrl: bestVideo?.url || bestAudio?.url,
             downloadUrl: bestVideo?.url || bestAudio?.url,
             audioUrl: bestAudio?.url || bestVideo?.url,

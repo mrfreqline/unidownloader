@@ -34,6 +34,7 @@ export interface AnalyzedMedia {
   audioUrl?: string
   isDirectMovie?: boolean
   fileSize?: string
+  formats?: Array<{ quality?: string | number; label?: string; url: string; type?: string }>
 }
 
 interface MediaCardProps {
@@ -104,12 +105,21 @@ export default function MediaCard({
   const handleDownloadClick = () => {
     const downloadType =
       activeTab === 'audio' ? 'audio' : activeTab === 'image' || media.fileType === 'image' ? 'image' : 'video'
-    const targetUrl =
-      activeTab === 'audio' && media.audioUrl
-        ? media.audioUrl
-        : activeTab === 'image' || media.fileType === 'image'
-        ? (media.downloadUrl || media.thumbnail)
-        : media.downloadUrl
+
+    let targetUrl = media.downloadUrl
+    if (activeTab === 'audio') {
+      targetUrl = media.audioUrl || media.downloadUrl
+    } else if (activeTab === 'image' || media.fileType === 'image') {
+      targetUrl = media.downloadUrl || media.thumbnail
+    } else if (media.formats && media.formats.length > 0) {
+      const cleanQ = selectedQuality.replace(/[^\d]/g, '')
+      const match = media.formats.find(
+        f => f.label === selectedQuality || (f.quality && cleanQ && String(f.quality) === cleanQ)
+      )
+      if (match?.url) {
+        targetUrl = match.url
+      }
+    }
 
     onDownload(
       activeTab === 'video' || activeTab === 'watch' ? selectedQuality : activeTab === 'audio' ? 'mp3' : 'original',

@@ -410,6 +410,7 @@ export default function Home() {
           audioUrl: data.audioUrl,
           isDirectMovie: data.isDirectMovie,
           fileSize: data.fileSize,
+          formats: data.formats,
         })
       }
     } catch {
@@ -531,19 +532,27 @@ export default function Home() {
         const data = await res.json()
         if (data.redirectUrl) {
           const defaultFilename = mediaType === 'image' ? 'image.jpg' : mediaType === 'audio' ? 'audio.mp3' : 'media.mp4'
-          setDirectDownloadLink({ url: data.redirectUrl, filename: data.filename || defaultFilename })
-          const a = document.createElement('a')
-          a.href = data.redirectUrl
-          a.download = data.filename || defaultFilename
-          a.target = '_blank'
-          document.body.appendChild(a)
-          a.click()
-          document.body.removeChild(a)
+          const filename = data.filename || defaultFilename
+          setDirectDownloadLink({ url: data.redirectUrl, filename })
 
-          // Mobile and in-app webview fallback (Instagram, TikTok, Safari, Chrome Mobile)
-          if (isInAppBrowser || (typeof navigator !== 'undefined' && /iPhone|iPad|iPod|Android/i.test(navigator.userAgent))) {
-            window.open(data.redirectUrl, '_blank')
-          }
+          // Trigger native browser download directly into Downloads folder without popup blockers
+          try {
+            const a = document.createElement('a')
+            a.href = data.redirectUrl
+            a.download = filename
+            document.body.appendChild(a)
+            a.click()
+            document.body.removeChild(a)
+          } catch {}
+
+          // Direct browser navigation trigger
+          // When a remote CDN provides Content-Disposition: attachment, window.location.href
+          // prompts the browser's download manager directly without unloading the current page.
+          setTimeout(() => {
+            try {
+              window.location.href = data.redirectUrl
+            } catch {}
+          }, 100)
 
           if (mediaType === 'video') {
             if (!isLoggedIn && guestTrials > 0 && !format.includes('4K')) {
@@ -797,33 +806,22 @@ export default function Home() {
           </div>
         )}
 
-        {/* Direct Download Tap Action for Mobile / In-App */}
-        {directDownloadLink && (
-          <div className="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/25 text-emerald-800 dark:text-emerald-300 text-xs sm:text-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 animate-in fade-in-50">
-            <div className="flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
-              <span className="font-medium text-zinc-800 dark:text-zinc-200">
-                Media ready: <strong className="font-mono">{directDownloadLink.filename}</strong>
-              </span>
-            </div>
-            <a
-              href={directDownloadLink.url}
-              download={directDownloadLink.filename}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs transition shadow-xs cursor-pointer"
-            >
-              <Zap className="w-3.5 h-3.5" />
-              <span>Tap to Save / Play File</span>
-            </a>
-          </div>
-        )}
-
         {/* Download Success Alert */}
         {downloadSuccessMsg && (
-          <div className="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-xs flex items-center gap-2.5 animate-in fade-in-50">
-            <CheckCircle2 className="w-4 h-4 shrink-0" />
-            <span className="font-mono text-[11px] sm:text-xs">{downloadSuccessMsg}</span>
+          <div className="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2 animate-in fade-in-50">
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 shrink-0" />
+              <span className="font-mono text-[11px] sm:text-xs">{downloadSuccessMsg}</span>
+            </div>
+            {directDownloadLink && (
+              <a
+                href={directDownloadLink.url}
+                download={directDownloadLink.filename}
+                className="text-[11px] font-medium underline text-emerald-700 dark:text-emerald-300 hover:text-emerald-500 cursor-pointer shrink-0"
+              >
+                Click here if file did not save automatically
+              </a>
+            )}
           </div>
         )}
 
