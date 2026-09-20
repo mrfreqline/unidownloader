@@ -44,6 +44,7 @@ export default function Home() {
   const [error, setError] = useState('')
   const [analyzedMedia, setAnalyzedMedia] = useState<AnalyzedMedia | null>(null)
   const [downloadSuccessMsg, setDownloadSuccessMsg] = useState<string | null>(null)
+  const [maintenanceMsg, setMaintenanceMsg] = useState<string | null>(null)
 
   useEffect(() => {
     const savedTheme = (localStorage.getItem('unidownloader_theme') as any) || 'dark'
@@ -295,7 +296,11 @@ export default function Home() {
 
       if (!res.ok) {
         setError(data.error || 'Unable to inspect media. Check the link and try again.')
+      } else if (data.isMaintenance) {
+        setMaintenanceMsg(data.message)
+        setError('')
       } else {
+        setMaintenanceMsg(null)
         setAnalyzedMedia({
           title: data.title || 'Extracted Media Stream',
           thumbnail: data.thumbnail || '',
@@ -304,9 +309,14 @@ export default function Home() {
           uploader: data.uploader,
           platform: data.platform || 'Direct Media',
           originalUrl: trimmed,
-          qualities: data.qualities || ['1080p', '720p', '360p'],
+          qualities: data.qualities || ['1080p Full HD', '720p HD', 'Audio Only'],
           isDirectFile: data.isDirectFile,
           fileType: data.fileType || 'video',
+          streamUrl: data.streamUrl,
+          downloadUrl: data.downloadUrl,
+          audioUrl: data.audioUrl,
+          isDirectMovie: data.isDirectMovie,
+          fileSize: data.fileSize,
         })
       }
     } catch {
@@ -319,7 +329,8 @@ export default function Home() {
   const handleDownload = async (
     format: string,
     mediaType: 'video' | 'audio' | 'image',
-    enhancement: EnhancementSettings
+    enhancement: EnhancementSettings,
+    downloadUrl?: string
   ) => {
     if (!analyzedMedia) return
     setIsDownloading(true)
@@ -333,6 +344,8 @@ export default function Home() {
         quality: format,
         mediaType,
         enhancement,
+        downloadUrl: downloadUrl || analyzedMedia.downloadUrl,
+        title: analyzedMedia.title,
       }
 
       if (mediaType === 'image') {
@@ -383,10 +396,10 @@ export default function Home() {
         window.URL.revokeObjectURL(blobUrl)
 
         if (mediaType === 'video') {
-          if (!isLoggedIn && guestTrials > 0 && format !== '4K') {
+          if (!isLoggedIn && guestTrials > 0 && !format.includes('4K')) {
             deductGuestTrial()
           } else {
-            const cost = format === '4K' ? 10 : format === '1080p' ? 5 : 2
+            const cost = format.includes('4K') ? 10 : format.includes('1080p') ? 5 : 2
             await deductTokens(cost, {
               url: analyzedMedia.originalUrl,
               title: analyzedMedia.title,
@@ -411,7 +424,31 @@ export default function Home() {
         setDownloadSuccessMsg(`Download initiated: ${filename}`)
       } else {
         const data = await res.json()
-        if (data.success || data.message) {
+        if (data.redirectUrl) {
+          const a = document.createElement('a')
+          a.href = data.redirectUrl
+          a.download = data.filename || 'media.mp4'
+          a.target = '_blank'
+          document.body.appendChild(a)
+          a.click()
+          document.body.removeChild(a)
+
+          if (mediaType === 'video') {
+            if (!isLoggedIn && guestTrials > 0 && !format.includes('4K')) {
+              deductGuestTrial()
+            } else {
+              const cost = format.includes('4K') ? 10 : format.includes('1080p') ? 5 : 2
+              await deductTokens(cost, {
+                url: analyzedMedia.originalUrl,
+                title: analyzedMedia.title,
+                format,
+                mediaType,
+                thumbnailUrl: analyzedMedia.thumbnail,
+              })
+            }
+          }
+          setDownloadSuccessMsg(`Download started via high-speed stream: ${data.filename || 'media.mp4'}`)
+        } else if (data.success || data.message) {
           setDownloadSuccessMsg(data.message || 'Media file transferred successfully.')
         }
       }
@@ -423,13 +460,13 @@ export default function Home() {
   }
 
   const platforms = [
-    { name: 'YouTube', type: 'Video / Audio' },
-    { name: 'TikTok', type: 'No Watermark' },
-    { name: 'Instagram', type: 'Reels / Posts' },
+    { name: 'TikTok', type: 'No Watermark HD' },
+    { name: 'Instagram', type: 'Reels & Posts' },
+    { name: 'Facebook', type: 'Full HD Videos' },
     { name: 'Twitter / X', type: 'High Bitrate' },
+    { name: 'Twitch', type: 'Clips & VODs' },
     { name: 'Reddit', type: 'Merged Audio' },
-    { name: 'Vimeo', type: 'Full HD' },
-    { name: 'Direct Links', type: '.mp4 / .jpg' },
+    { name: 'Direct Movies', type: '.mp4 / .mkv / .webm' },
   ]
 
   return (
@@ -464,19 +501,19 @@ export default function Home() {
         <div className="text-center space-y-2.5 pt-2 sm:pt-4">
           <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] sm:text-xs font-mono bg-zinc-100 dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400 border border-zinc-200 dark:border-zinc-800">
             <Zap className="w-3 h-3 text-amber-500 shrink-0" />
-            Universal Media Protocol • Ephemeral Cache
+            Universal Media Protocol • Ephemeral Stream Engine
           </div>
 
           <h1 className="text-2xl sm:text-4xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100 leading-tight">
-            Download Any Video, Audio, or Image
+            Download Any Video, Movie, or Audio in the World
           </h1>
 
           <p className="text-xs sm:text-sm text-zinc-500 max-w-xl mx-auto leading-relaxed px-2">
-            Extract high-fidelity media from social platforms or direct URLs. Optional precision trimming, compression, and format conversion.
+            Extract high-fidelity media from TikTok, Instagram, Facebook, Twitter/X, Twitch, Reddit, and direct movie links. Watch in-browser or download in 1 click.
           </p>
         </div>
 
-        {/* Input & Search Console: One-tap clipboard paste for mobile */}
+        {/* Input & Search Console */}
         <div className="space-y-2.5">
           <div className="relative rounded-2xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-900/90 shadow-sm transition-all focus-within:border-zinc-500 dark:focus-within:border-zinc-700 p-1.5 sm:p-2">
             <div className="flex items-center gap-1.5 sm:gap-2">
@@ -491,16 +528,20 @@ export default function Home() {
                 onChange={e => {
                   setUrl(e.target.value)
                   setError('')
+                  setMaintenanceMsg(null)
                 }}
                 onKeyDown={e => e.key === 'Enter' && handleAnalyze()}
-                placeholder="Paste media link here (YouTube, TikTok, Instagram, Twitter, etc.)..."
+                placeholder="Paste link here (TikTok, Instagram, Facebook, Twitter, Twitch, or Movie URL)..."
                 className="flex-1 py-2 text-xs sm:text-sm bg-transparent text-zinc-900 dark:text-zinc-100 outline-none font-mono placeholder:text-zinc-400 placeholder:font-sans min-w-0"
               />
 
-              {/* Paste or Clear Button: Always accessible on mobile */}
+              {/* Paste or Clear Button */}
               {url ? (
                 <button
-                  onClick={() => setUrl('')}
+                  onClick={() => {
+                    setUrl('')
+                    setMaintenanceMsg(null)
+                  }}
                   className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition touch-manipulation cursor-pointer shrink-0"
                   title="Clear input"
                 >
@@ -543,13 +584,13 @@ export default function Home() {
           <div className="flex flex-wrap items-center justify-between gap-2 px-1 text-[10px] sm:text-[11px] text-zinc-400 font-mono">
             <div className="flex items-center gap-2.5 sm:gap-3">
               <span className="flex items-center gap-1">
-                <FileVideo className="w-3 h-3 text-zinc-400" /> MP4 / 4K
+                <FileVideo className="w-3 h-3 text-zinc-400" /> MP4 / Movies
               </span>
               <span className="flex items-center gap-1">
                 <FileAudio className="w-3 h-3 text-emerald-500" /> Audio (Free)
               </span>
               <span className="flex items-center gap-1">
-                <FileImage className="w-3 h-3 text-emerald-500" /> Cover (Free)
+                <FileImage className="w-3 h-3 text-emerald-500" /> Watch Mode
               </span>
             </div>
 
@@ -564,6 +605,33 @@ export default function Home() {
             </div>
           </div>
         </div>
+
+        {/* YouTube Maintenance Notification Banner */}
+        {maintenanceMsg && (
+          <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/25 text-amber-800 dark:text-amber-300 text-xs sm:text-sm space-y-2 animate-in fade-in-50 duration-200">
+            <div className="flex items-center gap-2 font-semibold text-amber-700 dark:text-amber-400">
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              <span>YouTube Engine Maintenance Notice</span>
+            </div>
+            <p className="text-zinc-600 dark:text-zinc-400 text-xs leading-relaxed">
+              {maintenanceMsg}
+            </p>
+            <div className="pt-1 flex flex-wrap gap-1.5 text-[10px] sm:text-[11px] font-mono text-zinc-600 dark:text-zinc-400">
+              <span className="px-2 py-0.5 rounded-md bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800">
+                TikTok: Active (No Watermark)
+              </span>
+              <span className="px-2 py-0.5 rounded-md bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800">
+                Instagram: Active
+              </span>
+              <span className="px-2 py-0.5 rounded-md bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800">
+                Facebook / X: Active
+              </span>
+              <span className="px-2 py-0.5 rounded-md bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800">
+                Direct Movies: Active
+              </span>
+            </div>
+          </div>
+        )}
 
         {/* Error Alert */}
         {error && (
