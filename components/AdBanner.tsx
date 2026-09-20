@@ -1,50 +1,116 @@
 'use client'
 
-import { Sparkles, ArrowRight } from 'lucide-react'
+import { useState, useEffect } from 'react'
 
 interface AdBannerProps {
   slot?: 'top' | 'middle' | 'bottom'
   className?: string
+  format?: 'responsive' | 'mobile_only' | 'desktop_only'
 }
 
-export default function AdBanner({ slot = 'middle', className = '' }: AdBannerProps) {
+const DESKTOP_728x90_HTML = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: transparent; overflow: hidden; display: flex; justify-content: center; align-items: center; height: 90px; }
+  </style>
+</head>
+<body>
+  <script type="text/javascript">
+    atOptions = {
+      'key' : '27a8ecf81421064575013b23579bc8dd',
+      'format' : 'iframe',
+      'height' : 90,
+      'width' : 728,
+      'params' : {}
+    };
+  </script>
+  <script type="text/javascript" src="https://www.highrevenueformat.com/27a8ecf81421064575013b23579bc8dd/invoke.js"></script>
+</body>
+</html>`
+
+const MOBILE_320x50_HTML = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: transparent; overflow: hidden; display: flex; justify-content: center; align-items: center; height: 50px; }
+  </style>
+</head>
+<body>
+  <script type="text/javascript">
+    atOptions = {
+      'key' : '477de950be79cc139758854342f5b52d',
+      'format' : 'iframe',
+      'height' : 50,
+      'width' : 320,
+      'params' : {}
+    };
+  </script>
+  <script type="text/javascript" src="https://www.highrevenueformat.com/477de950be79cc139758854342f5b52d/invoke.js"></script>
+</body>
+</html>`
+
+export default function AdBanner({ slot = 'middle', className = '', format = 'responsive' }: AdBannerProps) {
+  const [mounted, setMounted] = useState(false)
+
+  useEffect(() => {
+    setMounted(true)
+  }, [])
+
+  if (!mounted) {
+    return (
+      <div className={`w-full max-w-4xl mx-auto my-3 text-center ${className}`}>
+        <span className="text-[9px] font-mono tracking-widest text-zinc-400 dark:text-zinc-600 uppercase block mb-1">
+          ADVERTISEMENT
+        </span>
+        <div className="rounded-2xl border border-zinc-200/60 dark:border-zinc-800/80 bg-zinc-100/40 dark:bg-zinc-900/30 h-[66px] sm:h-[106px] animate-pulse" />
+      </div>
+    )
+  }
+
   return (
-    <div className={`w-full max-w-4xl mx-auto my-2 ${className}`}>
-      {/* Compact Ad Banner */}
-      <div className="relative rounded-xl border border-zinc-200/70 dark:border-zinc-800/80 bg-zinc-100/50 dark:bg-zinc-900/30 px-3 py-2 flex items-center justify-between gap-2.5 transition shadow-xs hover:border-zinc-300 dark:hover:border-zinc-700">
+    <div className={`w-full max-w-4xl mx-auto my-3 text-center ${className}`}>
+      {/* Sleek Subtitle Label (Matches your screenshot) */}
+      <span className="text-[9px] font-mono tracking-widest text-zinc-400 dark:text-zinc-500 uppercase block mb-1.5">
+        ADVERTISEMENT
+      </span>
+
+      {/* Styled Dark Rounded Frame (Matches your screenshot) */}
+      <div className="relative rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/60 p-2 sm:p-2.5 flex items-center justify-center overflow-hidden shadow-xs transition hover:border-zinc-300 dark:hover:border-zinc-700">
         
-        {/* Left: Micro Tag + Compact Title */}
-        <div className="flex items-center gap-2 min-w-0">
-          <span className="text-[8px] font-mono uppercase tracking-wider px-1 py-0.5 rounded bg-zinc-200/80 dark:bg-zinc-800 text-zinc-500 shrink-0">
-            Ad
-          </span>
-
-          <div className="flex items-center gap-1.5 min-w-0">
-            <Sparkles className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-            <span className="text-[11px] sm:text-xs font-medium text-zinc-700 dark:text-zinc-300 truncate">
-              {slot === 'top'
-                ? 'High-speed media extraction • 100% Free & Unlimited'
-                : slot === 'bottom'
-                ? 'Anonymous & Ephemeral CDN • Zero Logs Saved'
-                : 'Need 4K UHD or MP3? Download in maximum bitrate'}
-            </span>
+        {/* Desktop 728x90 Leaderboard (Hidden on small mobile screens) */}
+        {format !== 'mobile_only' && (
+          <div className="hidden sm:flex justify-center items-center w-full min-h-[90px]">
+            <iframe
+              srcDoc={DESKTOP_728x90_HTML}
+              width={728}
+              height={90}
+              title={`Adsterra Desktop ${slot}`}
+              className="border-0 overflow-hidden max-w-full"
+              loading="lazy"
+              scrolling="no"
+            />
           </div>
-        </div>
+        )}
 
-        {/* Right: Small Action Button */}
-        <button
-          onClick={() => {
-            const el = document.querySelector('input[type="url"]') as HTMLInputElement
-            if (el) {
-              el.focus()
-              el.scrollIntoView({ behavior: 'smooth', block: 'center' })
-            }
-          }}
-          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-zinc-900 dark:bg-zinc-100 hover:bg-zinc-800 dark:hover:bg-zinc-200 text-white dark:text-zinc-950 text-[10px] sm:text-[11px] font-semibold transition shrink-0 cursor-pointer shadow-xs"
-        >
-          <span>Fast Download</span>
-          <ArrowRight className="w-3 h-3" />
-        </button>
+        {/* Mobile 320x50 Banner (Shown only on small mobile screens) */}
+        {format !== 'desktop_only' && (
+          <div className="flex sm:hidden justify-center items-center w-full min-h-[50px]">
+            <iframe
+              srcDoc={MOBILE_320x50_HTML}
+              width={320}
+              height={50}
+              title={`Adsterra Mobile ${slot}`}
+              className="border-0 overflow-hidden max-w-full"
+              loading="lazy"
+              scrolling="no"
+            />
+          </div>
+        )}
 
       </div>
     </div>

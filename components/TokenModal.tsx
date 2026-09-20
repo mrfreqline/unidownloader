@@ -19,6 +19,11 @@ import {
   Info,
 } from 'lucide-react'
 
+import AdBanner from './AdBanner'
+
+const ADSTERRA_SMARTLINK =
+  'https://www.profitableratecpmnetwork.com/gvwaq8hih?key=3a220d2a7e229bd864d3aac504d1e304'
+
 interface TokenModalProps {
   isOpen: boolean
   onClose: () => void
@@ -91,17 +96,33 @@ export default function TokenModal({
   if (!isOpen) return null
 
   const handleStartAd = () => {
+    try {
+      window.open(ADSTERRA_SMARTLINK, '_blank', 'noopener,noreferrer')
+    } catch {
+      // Ignore if blocked by browser
+    }
     setIsWatchingAd(true)
     setAdProgress(0)
     setAdSecondsLeft(5)
     setCanSkip(false)
-    setCurrentAdIndex(prev => (prev + 1) % SAMPLE_ADS.length)
   }
 
-  const handleClaimAndSkip = () => {
+  const handleClaimAndSkip = async () => {
     if (!canSkip) return
     setIsWatchingAd(false)
     setCanSkip(false)
+
+    // Sync token reward to server IP-quota
+    try {
+      await fetch('/api/user/ip-quota', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'reward', amount: 4 }),
+      })
+    } catch {
+      // Continue even if network error
+    }
+
     onAddTokens(4)
     setRewardClaimed(4)
     setTimeout(() => setRewardClaimed(null), 3500)
@@ -234,34 +255,28 @@ export default function TokenModal({
                   />
                 </div>
 
-                {/* AD DISPLAY SLOT */}
-                <div
-                  id="adsterra-banner-slot"
-                  className="relative rounded-lg bg-zinc-900 border border-zinc-800 p-3 sm:p-4 hover:border-zinc-700 transition group cursor-pointer touch-manipulation"
-                  onClick={() => window.open(currentAd.url, '_blank')}
-                  title="Click to visit sponsor"
-                >
-                  <div className="flex items-start justify-between gap-2.5">
-                    <div className="space-y-1">
-                      <span className="inline-block px-1.5 py-0.2 rounded-xs bg-zinc-800 text-zinc-400 text-[9px] font-mono uppercase tracking-wider">
-                        {currentAd.tag} • Sponsored
+                {/* AD DISPLAY SLOT: Live Adsterra Unit */}
+                <div className="space-y-2">
+                  <div
+                    id="adsterra-banner-slot"
+                    className="relative rounded-xl bg-zinc-900 border border-zinc-800 p-2 sm:p-3 hover:border-zinc-700 transition group cursor-pointer touch-manipulation text-center"
+                    onClick={() => {
+                      try {
+                        window.open(ADSTERRA_SMARTLINK, '_blank', 'noopener,noreferrer')
+                      } catch {}
+                    }}
+                    title="Click to visit sponsor"
+                  >
+                    <AdBanner format="mobile_only" className="my-0" />
+
+                    <div className="mt-1 pt-1.5 border-t border-zinc-800/80 flex items-center justify-between text-[10px] font-mono text-zinc-400 px-1">
+                      <span className="flex items-center gap-1 text-emerald-400">
+                        <Sparkles className="w-3 h-3" /> Adsterra Sponsor
                       </span>
-                      <h4 className="text-xs sm:text-sm font-semibold text-zinc-100 group-hover:text-blue-400 transition leading-snug">
-                        {currentAd.title}
-                      </h4>
-                      <p className="text-[11px] text-zinc-400 leading-relaxed line-clamp-2">
-                        {currentAd.description}
-                      </p>
+                      <span className="text-blue-400 group-hover:underline flex items-center gap-1">
+                        Open Ad <ExternalLink className="w-2.5 h-2.5" />
+                      </span>
                     </div>
-
-                    <div className="p-1.5 sm:p-2 rounded-lg bg-zinc-800 text-zinc-300 group-hover:bg-blue-600 group-hover:text-white transition shrink-0">
-                      <ExternalLink className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
-                    </div>
-                  </div>
-
-                  <div className="mt-2 pt-2 border-t border-zinc-800/80 flex items-center justify-between text-[10px] font-mono text-zinc-500">
-                    <span>{currentAd.domain}</span>
-                    <span className="text-blue-400">Visit Site →</span>
                   </div>
                 </div>
 

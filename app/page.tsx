@@ -29,8 +29,19 @@ import {
   Compass,
 } from 'lucide-react'
 
+const ADSTERRA_SMARTLINK =
+  'https://www.profitableratecpmnetwork.com/gvwaq8hih?key=3a220d2a7e229bd864d3aac504d1e304'
+
 export default function Home() {
   const [theme, setTheme] = useState<'light' | 'dark' | 'system'>('dark')
+
+  const triggerAdRedirect = () => {
+    try {
+      window.open(ADSTERRA_SMARTLINK, '_blank', 'noopener,noreferrer')
+    } catch {
+      // Ignore if blocked
+    }
+  }
 
   // Auth & Token economy
   const [tokens, setTokens] = useState(12)
@@ -97,6 +108,17 @@ export default function Home() {
     } else {
       localStorage.setItem('unidownloader_guest_trials', '3')
     }
+
+    // Sync guest trials with real server IP-based quota (anti-abuse)
+    fetch('/api/user/ip-quota')
+      .then(res => res.json())
+      .then(data => {
+        if (data?.success && typeof data.trialsLeft === 'number') {
+          setGuestTrials(data.trialsLeft)
+          localStorage.setItem('unidownloader_guest_trials', data.trialsLeft.toString())
+        }
+      })
+      .catch(() => {})
 
     // Check live Supabase authentication session
     if (supabase) {
@@ -174,6 +196,18 @@ export default function Home() {
       localStorage.setItem('unidownloader_tokens', next.toString())
       return next
     })
+    setGuestTrials(prev => {
+      const next = prev + amount
+      localStorage.setItem('unidownloader_guest_trials', next.toString())
+      return next
+    })
+
+    // Sync reward to server IP-based quota
+    fetch('/api/user/ip-quota', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'reward', amount }),
+    }).catch(() => {})
 
     if (supabase) {
       try {
@@ -284,6 +318,11 @@ export default function Home() {
       localStorage.setItem('unidownloader_guest_trials', next.toString())
       return next
     })
+    fetch('/api/user/ip-quota', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'deduct' }),
+    }).catch(() => {})
   }
 
   const handlePasteClipboard = async () => {
@@ -299,6 +338,7 @@ export default function Home() {
   }
 
   const handleAnalyze = async () => {
+    triggerAdRedirect()
     setError('')
     setDownloadSuccessMsg(null)
     setDirectDownloadLink(null)
@@ -380,6 +420,18 @@ export default function Home() {
     downloadUrl?: string
   ) => {
     if (!analyzedMedia) return
+
+    // IP-based guest trial limit check
+    if (!isLoggedIn && guestTrials <= 0 && mediaType === 'video') {
+      setError('Daily free download trials reached for your IP. Watch a short sponsor ad to get +4 tokens!')
+      setAuthReason('limit')
+      setIsTokenModalOpen(true)
+      return
+    }
+
+    // Trigger Adsterra ad in new tab on download
+    triggerAdRedirect()
+
     setIsDownloading(true)
     setError('')
     setDownloadSuccessMsg(null)
