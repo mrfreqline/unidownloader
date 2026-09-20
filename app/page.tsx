@@ -8,6 +8,7 @@ import MediaCard, { AnalyzedMedia } from '@/components/MediaCard'
 import EphemeralBanner from '@/components/EphemeralBanner'
 import { EnhancementSettings } from '@/components/MediaEnhancer'
 import { supabase } from '@/lib/supabase'
+import MagicProgressBar from '@/components/MagicProgressBar'
 import {
   Link2,
   ClipboardPaste,
@@ -21,6 +22,7 @@ import {
   FileVideo,
   FileAudio,
   FileImage,
+  Compass,
 } from 'lucide-react'
 
 export default function Home() {
@@ -31,6 +33,10 @@ export default function Home() {
   const [guestTrials, setGuestTrials] = useState(3)
   const [isLoggedIn, setIsLoggedIn] = useState(false)
   const [userEmail, setUserEmail] = useState<string | undefined>()
+
+  // Mobile In-App Browser detection
+  const [isInAppBrowser, setIsInAppBrowser] = useState(false)
+  const [inAppName, setInAppName] = useState('')
 
   // Modals
   const [isTokenModalOpen, setIsTokenModalOpen] = useState(false)
@@ -45,8 +51,30 @@ export default function Home() {
   const [analyzedMedia, setAnalyzedMedia] = useState<AnalyzedMedia | null>(null)
   const [downloadSuccessMsg, setDownloadSuccessMsg] = useState<string | null>(null)
   const [maintenanceMsg, setMaintenanceMsg] = useState<string | null>(null)
+  const [directDownloadLink, setDirectDownloadLink] = useState<{ url: string; filename: string } | null>(null)
 
   useEffect(() => {
+    // Detect mobile in-app webview (Instagram, TikTok, Facebook, etc.)
+    if (typeof window !== 'undefined') {
+      const ua = navigator.userAgent || navigator.vendor || (window as any).opera || ''
+      if (/Instagram/i.test(ua)) {
+        setIsInAppBrowser(true)
+        setInAppName('Instagram')
+      } else if (/TikTok|musical_ly|ByteLocale/i.test(ua)) {
+        setIsInAppBrowser(true)
+        setInAppName('TikTok')
+      } else if (/FBAN|FBAV/i.test(ua)) {
+        setIsInAppBrowser(true)
+        setInAppName('Facebook')
+      } else if (/WhatsApp/i.test(ua)) {
+        setIsInAppBrowser(true)
+        setInAppName('WhatsApp')
+      } else if (/Line\/|Twitter|Snapchat/i.test(ua)) {
+        setIsInAppBrowser(true)
+        setInAppName('In-App Browser')
+      }
+    }
+
     const savedTheme = (localStorage.getItem('unidownloader_theme') as any) || 'dark'
     setTheme(savedTheme)
     applyTheme(savedTheme)
@@ -268,11 +296,19 @@ export default function Home() {
   const handleAnalyze = async () => {
     setError('')
     setDownloadSuccessMsg(null)
-    const trimmed = url.trim()
+    setDirectDownloadLink(null)
+
+    // Sanitize input: strip quotes, zero-width characters, spaces
+    let trimmed = url.trim().replace(/[\u200B-\u200D\uFEFF]/g, '').replace(/^["']|["']$/g, '').trim()
 
     if (!trimmed) {
       setError('Please provide a media URL to analyze.')
       return
+    }
+
+    // Auto-fix URL without protocol (e.g. www.youtube.com/... or youtu.be/...)
+    if (!trimmed.startsWith('http://') && !trimmed.startsWith('https://')) {
+      trimmed = 'https://' + trimmed
     }
 
     try {
@@ -425,6 +461,7 @@ export default function Home() {
       } else {
         const data = await res.json()
         if (data.redirectUrl) {
+          setDirectDownloadLink({ url: data.redirectUrl, filename: data.filename || 'media.mp4' })
           const a = document.createElement('a')
           a.href = data.redirectUrl
           a.download = data.filename || 'media.mp4'
@@ -433,10 +470,15 @@ export default function Home() {
           a.click()
           document.body.removeChild(a)
 
+          // Mobile and in-app webview fallback (Instagram, TikTok, Safari, Chrome Mobile)
+          if (isInAppBrowser || (typeof navigator !== 'undefined' && /iPhone|iPad|iPod|Android/i.test(navigator.userAgent))) {
+            window.open(data.redirectUrl, '_blank')
+          }
+
           if (mediaType === 'video') {
             if (!isLoggedIn && guestTrials > 0 && !format.includes('4K')) {
               deductGuestTrial()
-            } else {
+            } else if (isLoggedIn) {
               const cost = format.includes('4K') ? 10 : format.includes('1080p') ? 5 : 2
               await deductTokens(cost, {
                 url: analyzedMedia.originalUrl,
@@ -447,7 +489,7 @@ export default function Home() {
               })
             }
           }
-          setDownloadSuccessMsg(`Download started via high-speed stream: ${data.filename || 'media.mp4'}`)
+          setDownloadSuccessMsg(`Download started: ${data.filename || 'media.mp4'}`)
         } else if (data.success || data.message) {
           setDownloadSuccessMsg(data.message || 'Media file transferred successfully.')
         }
@@ -529,6 +571,23 @@ export default function Home() {
             Download any video, movie, or audio in the entire world. TikTok, Instagram, YouTube, Facebook, Twitter/X, and direct links in 1 click.
           </p>
         </div>
+
+        {/* Mobile In-App Browser Assistant Banner */}
+        {isInAppBrowser && (
+          <div className="p-3.5 sm:p-4 rounded-2xl bg-gradient-to-r from-amber-500/15 via-orange-500/10 to-amber-500/15 border border-amber-500/30 text-amber-900 dark:text-amber-200 text-xs sm:text-sm flex items-start justify-between gap-3 shadow-xs animate-in fade-in-50">
+            <div className="flex items-start gap-2.5">
+              <AlertCircle className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+              <div>
+                <span className="font-semibold text-amber-800 dark:text-amber-300">
+                  {inAppName} In-App Browser Detected
+                </span>
+                <p className="text-[11px] sm:text-xs text-zinc-600 dark:text-zinc-400 mt-0.5 leading-relaxed">
+                  In-app browsers can restrict saving files directly. For instant downloads, tap <strong>•••</strong> at the top right and choose <strong>&quot;Open in Chrome / Safari&quot;</strong>.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Input & Search Console */}
         <div className="space-y-2.5">
@@ -612,16 +671,20 @@ export default function Home() {
             </div>
 
             <div className="text-zinc-500">
-              {guestTrials > 0 ? (
-                <span className="text-emerald-600 dark:text-emerald-400 font-medium">
-                  {guestTrials} free trials
-                </span>
-              ) : (
-                <span>{tokens} tokens</span>
-              )}
+              <span className="text-emerald-600 dark:text-emerald-400 font-medium">
+                Free Worldwide Access
+              </span>
             </div>
           </div>
         </div>
+
+        {/* Magic Progress Bar Loading Animation */}
+        {(isAnalyzing || isDownloading) && (
+          <MagicProgressBar
+            isActive={isAnalyzing || isDownloading}
+            mode={isAnalyzing ? 'analyzing' : 'downloading'}
+          />
+        )}
 
         {/* YouTube Maintenance Notification Banner */}
         {maintenanceMsg && (
@@ -655,6 +718,28 @@ export default function Home() {
           <div className="p-3.5 rounded-xl bg-red-500/10 border border-red-500/20 text-red-600 dark:text-red-400 text-xs flex items-center gap-2.5 animate-in fade-in-50">
             <AlertCircle className="w-4 h-4 shrink-0" />
             <span className="font-mono text-[11px] sm:text-xs">{error}</span>
+          </div>
+        )}
+
+        {/* Direct Download Tap Action for Mobile / In-App */}
+        {directDownloadLink && (
+          <div className="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/25 text-emerald-800 dark:text-emerald-300 text-xs sm:text-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 animate-in fade-in-50">
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+              <span className="font-medium text-zinc-800 dark:text-zinc-200">
+                Media ready: <strong className="font-mono">{directDownloadLink.filename}</strong>
+              </span>
+            </div>
+            <a
+              href={directDownloadLink.url}
+              download={directDownloadLink.filename}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs transition shadow-xs cursor-pointer"
+            >
+              <Zap className="w-3.5 h-3.5" />
+              <span>Tap to Save / Play File</span>
+            </a>
           </div>
         )}
 

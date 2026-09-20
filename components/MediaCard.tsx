@@ -98,24 +98,10 @@ export default function MediaCard({
   }
 
   const tokenCost = getTokenCost()
-  const isFreeTrialApplicable =
-    !isLoggedIn && tokenCost > 0 && guestDownloadsLeft > 0 && !selectedQuality.includes('4K')
-  const canAfford = isFreeTrialApplicable || tokenCost === 0 || tokens >= tokenCost
+  const isFreeTrialApplicable = true
+  const canAfford = true
 
   const handleDownloadClick = () => {
-    if (selectedQuality.includes('4K') && !isLoggedIn) {
-      onRequireAuth('4k')
-      return
-    }
-
-    if (!canAfford) {
-      if (!isLoggedIn && guestDownloadsLeft <= 0) {
-        onRequireAuth('limit')
-      } else {
-        onRequireTokens()
-      }
-      return
-    }
 
     const downloadType = activeTab === 'audio' ? 'audio' : activeTab === 'image' ? 'image' : 'video'
     const targetUrl = activeTab === 'audio' && media.audioUrl ? media.audioUrl : media.downloadUrl
@@ -408,11 +394,6 @@ export default function MediaCard({
               <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
               <span>Fetching download stream...</span>
             </>
-          ) : selectedQuality.includes('4K') && !isLoggedIn ? (
-            <>
-              <Lock className="w-4 h-4" />
-              <span>Log in for 4K Ultra HD (-10 Tokens)</span>
-            </>
           ) : (
             <>
               <Download className="w-4 h-4 stroke-[2.5]" />
@@ -425,11 +406,7 @@ export default function MediaCard({
                   : activeTab === 'audio'
                   ? 'Audio MP3'
                   : 'Cover Image'}
-                {isFreeTrialApplicable
-                  ? ' (Free Trial)'
-                  : tokenCost === 0
-                  ? ' (FREE)'
-                  : ` (-${tokenCost} Tokens)`}
+                {' (Free)'}
               </span>
             </>
           )}
@@ -437,20 +414,8 @@ export default function MediaCard({
 
         {/* Quota hint */}
         <div className="flex items-center justify-between text-[10px] sm:text-[11px] text-zinc-500 px-1 font-mono">
-          <span>
-            {(activeTab === 'video' || activeTab === 'watch') && isFreeTrialApplicable && (
-              <span className="text-emerald-600 dark:text-emerald-400 font-medium">
-                Using 1 of {guestDownloadsLeft} free trials
-              </span>
-            )}
-            {(activeTab === 'video' || activeTab === 'watch') && !isFreeTrialApplicable && (
-              <span>Balance: {tokens} Tokens (Cost: {tokenCost})</span>
-            )}
-            {(activeTab === 'audio' || activeTab === 'image') && (
-              <span className="text-emerald-600 dark:text-emerald-400">
-                100% Free • Unlimited
-              </span>
-            )}
+          <span className="text-emerald-600 dark:text-emerald-400 font-medium">
+            100% Free • Unlimited Worldwide Access
           </span>
 
           <span>Zero retention • Ephemeral stream</span>

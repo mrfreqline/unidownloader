@@ -470,12 +470,36 @@ function parseYouTubeYtDlp(d: any): StreamResult {
   }
 }
 
+// Sanitize incoming media URL by stripping tracking parameters, zero-width spaces, and quotes
+export function sanitizeMediaUrl(url: string): string {
+  if (!url) return ''
+  let cleaned = url.trim()
+  cleaned = cleaned.replace(/[\u200B-\u200D\uFEFF]/g, '').trim()
+  cleaned = cleaned.replace(/^["']|["']$/g, '').trim()
+
+  try {
+    const parsed = new URL(cleaned)
+    const trackingParams = ['si', 'utm_source', 'utm_medium', 'utm_campaign', 'feature', 'stkn', 'fbclid', 'igsh']
+    trackingParams.forEach(p => parsed.searchParams.delete(p))
+    return parsed.toString()
+  } catch {
+    return cleaned
+  }
+}
+
 export function extractYouTubeVideoId(url: string): string | null {
   try {
-    const trimmed = url.trim()
-    const regex = /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|embed|watch|shorts)\/|.*[?&]v=)|youtu\.be\/)([a-zA-Z0-9_-]{11})(?:[&?]|$)/i
+    const trimmed = url.trim().replace(/[\u200B-\u200D\uFEFF]/g, '').replace(/^["']|["']$/g, '')
+    const regex = /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|embed|watch|shorts)\/|.*[?&]v=)|youtu\.be\/)([a-zA-Z0-9_-]{11})/i
     const match = trimmed.match(regex)
     if (match && match[1]) return match[1]
+
+    try {
+      const parsed = new URL(trimmed.startsWith('http') ? trimmed : `https://${trimmed}`)
+      const v = parsed.searchParams.get('v')
+      if (v && /^[a-zA-Z0-9_-]{11}$/.test(v)) return v
+    } catch {}
+
     if (/^[a-zA-Z0-9_-]{11}$/.test(trimmed)) return trimmed
     return null
   } catch {
@@ -485,7 +509,7 @@ export function extractYouTubeVideoId(url: string): string | null {
 
 // 4. YouTube Dedicated Multi-Tier Serverless Resolver
 export async function resolveYouTube(url: string): Promise<StreamResult | null> {
-  const cleanUrl = url.trim()
+  const cleanUrl = sanitizeMediaUrl(url)
   const videoId = extractYouTubeVideoId(cleanUrl)
   const canonicalUrl = videoId ? `https://www.youtube.com/watch?v=${videoId}` : cleanUrl
 
@@ -628,7 +652,59 @@ export async function resolveYouTube(url: string): Promise<StreamResult | null> 
     }
   }
 
-  // Engine C: Local / host yt-dlp extractor (for local development or environments with python/yt-dlp)
+  // Engine C: Invidious Multi-Node Public Instances (Zero Serverless Dependencies)
+  if (videoId) {
+    const invidiousInstances = [
+      'https://invidious.nerdvpn.de',
+      'https://inv.nadeko.net',
+      'https://invidious.private.coffee',
+      'https://iv.ggtyler.dev',
+      'https://invidious.jing.rocks',
+    ]
+
+    for (const inst of invidiousInstances) {
+      try {
+        const invRes = await fetch(`${inst}/api/v1/videos/${videoId}`, {
+          headers: {
+            'User-Agent':
+              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko)',
+          },
+          signal: AbortSignal.timeout(4500),
+        })
+
+        if (invRes.ok) {
+          const d = await invRes.json()
+          if (d && (d.formatStreams || d.adaptiveFormats)) {
+            const prog = d.formatStreams || []
+            const adapt = d.adaptiveFormats || []
+            const bestProg = prog[0] || adapt.find((f: any) => f.type?.includes('video/mp4'))
+            const bestAud = adapt.find((f: any) => f.type?.includes('audio')) || bestProg
+
+            if (bestProg?.url || bestAud?.url) {
+              const dur = d.lengthSeconds
+                ? `${Math.floor(d.lengthSeconds / 60)}:${String(d.lengthSeconds % 60).padStart(2, '0')}`
+                : undefined
+              return {
+                title: d.title || 'YouTube Video',
+                thumbnail: d.videoThumbnails?.[0]?.url || `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
+                duration: dur,
+                uploader: d.author || 'YouTube Creator',
+                platform: 'YouTube',
+                qualities: ['720p HD', '360p Standard', 'Audio Only'],
+                streamUrl: bestProg?.url || bestAud?.url,
+                downloadUrl: bestProg?.url || bestAud?.url,
+                audioUrl: bestAud?.url || bestProg?.url,
+              }
+            }
+          }
+        }
+      } catch {
+        // Continue to next node
+      }
+    }
+  }
+
+  // Engine D: Local / host yt-dlp extractor (for local development or environments with python/yt-dlp)
   try {
     const { exec } = await import('child_process')
     const p = new Promise<StreamResult | null>((resolve) => {
@@ -659,7 +735,7 @@ export async function resolveYouTube(url: string): Promise<StreamResult | null> 
     console.warn('[YouTube yt-dlp error]:', err)
   }
 
-  // Engine D: ruhend-scraper search fallback
+  // Engine E: ruhend-scraper search fallback
   try {
     const ruhendMod = await import('ruhend-scraper')
     const ruhend = ruhendMod.default || ruhendMod
@@ -727,7 +803,7 @@ export async function resolveTwitter(url: string): Promise<StreamResult | null> 
 
 // Universal Resolver orchestrator
 export async function resolveMediaUrl(url: string): Promise<StreamResult> {
-  const trimmedUrl = url.trim()
+  const trimmedUrl = sanitizeMediaUrl(url)
 
   // 1. YouTube Dedicated High-Speed Video & Audio Resolver
   if (isYouTubeUrl(trimmedUrl)) {
