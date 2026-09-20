@@ -32,6 +32,7 @@ export async function POST(req: NextRequest) {
       audioUrl: result.audioUrl,
       isDirectMovie: result.isDirectMovie || false,
       fileSize: result.fileSize || '',
+      folderData: result.folderData,
     })
 
   } catch (err: any) {

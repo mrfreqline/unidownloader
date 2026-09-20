@@ -113,12 +113,14 @@ export async function POST(req: NextRequest) {
     const ext = isAudio ? 'mp3' : 'mp4'
     const cleanFileName = `${cleanTitle}.${ext}`
 
-    // Direct high-speed CDN URLs (SaveTube Cloudflare, TikWM, etc.) are delivered directly to the client
+    // Direct high-speed CDN URLs (SaveTube Cloudflare, TikWM, ShareBox CDN, etc.) are delivered directly to the client
     // This avoids Vercel Serverless Function 4.5MB body limits and 10s execution timeouts
     const isDirectCdn =
       targetDownloadUrl.includes('savetube') ||
       targetDownloadUrl.includes('tikwm') ||
-      targetDownloadUrl.includes('fxtwitter')
+      targetDownloadUrl.includes('fxtwitter') ||
+      targetDownloadUrl.includes('pbcshsnp.com') ||
+      targetDownloadUrl.includes('cshsnpcwio')
 
     if (isDirectCdn) {
       return NextResponse.json({ redirectUrl: targetDownloadUrl, filename: cleanFileName })

@@ -9,6 +9,8 @@ import EphemeralBanner from '@/components/EphemeralBanner'
 import { EnhancementSettings } from '@/components/MediaEnhancer'
 import { supabase } from '@/lib/supabase'
 import MagicProgressBar from '@/components/MagicProgressBar'
+import FolderExplorer from '@/components/FolderExplorer'
+import { FolderResult } from '@/lib/downloader/terabox-resolver'
 import {
   Link2,
   ClipboardPaste,
@@ -49,6 +51,7 @@ export default function Home() {
   const [isDownloading, setIsDownloading] = useState(false)
   const [error, setError] = useState('')
   const [analyzedMedia, setAnalyzedMedia] = useState<AnalyzedMedia | null>(null)
+  const [folderData, setFolderData] = useState<FolderResult | null>(null)
   const [downloadSuccessMsg, setDownloadSuccessMsg] = useState<string | null>(null)
   const [maintenanceMsg, setMaintenanceMsg] = useState<string | null>(null)
   const [directDownloadLink, setDirectDownloadLink] = useState<{ url: string; filename: string } | null>(null)
@@ -320,6 +323,7 @@ export default function Home() {
 
     setIsAnalyzing(true)
     setAnalyzedMedia(null)
+    setFolderData(null)
 
     try {
       const res = await fetch('/api/analyze', {
@@ -337,6 +341,11 @@ export default function Home() {
         setError('')
       } else {
         setMaintenanceMsg(null)
+
+        if (data.folderData) {
+          setFolderData(data.folderData)
+        }
+
         setAnalyzedMedia({
           title: data.title || 'Extracted Media Stream',
           thumbnail: data.thumbnail || '',
@@ -502,6 +511,7 @@ export default function Home() {
   }
 
   const platforms = [
+    { name: 'TeraBox / ShareBox', type: 'Folders & Files' },
     { name: 'TikTok', type: 'No Watermark HD' },
     { name: 'Instagram', type: 'Reels & Posts' },
     { name: 'Facebook', type: 'Full HD Videos' },
@@ -607,7 +617,7 @@ export default function Home() {
                   setMaintenanceMsg(null)
                 }}
                 onKeyDown={e => e.key === 'Enter' && handleAnalyze()}
-                placeholder="Paste link here (YouTube, TikTok, Instagram, Facebook, Twitter, Twitch, Movie URL)..."
+                placeholder="Paste link here (YouTube, TeraBox, ShareBox, TikTok, Instagram, Movies)..."
                 className="flex-1 py-2 text-xs sm:text-sm bg-transparent text-zinc-900 dark:text-zinc-100 outline-none font-mono placeholder:text-zinc-400 placeholder:font-sans min-w-0"
               />
 
@@ -617,6 +627,8 @@ export default function Home() {
                   onClick={() => {
                     setUrl('')
                     setMaintenanceMsg(null)
+                    setFolderData(null)
+                    setAnalyzedMedia(null)
                   }}
                   className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition touch-manipulation cursor-pointer shrink-0"
                   title="Clear input"
@@ -751,8 +763,16 @@ export default function Home() {
           </div>
         )}
 
-        {/* Analyzed Media Result Component */}
-        {analyzedMedia && (
+        {/* TeraBox / ShareBox Interactive Folder Explorer */}
+        {folderData && (
+          <FolderExplorer
+            initialFolder={folderData}
+            onClose={() => setFolderData(null)}
+          />
+        )}
+
+        {/* Analyzed Media Result Component (Standard Single-File Flow) */}
+        {analyzedMedia && !folderData && (
           <MediaCard
             media={analyzedMedia}
             tokens={tokens}
@@ -769,7 +789,7 @@ export default function Home() {
         )}
 
         {/* Platform Grid Pills */}
-        {!analyzedMedia && (
+        {!analyzedMedia && !folderData && (
           <div className="space-y-2.5 pt-1">
             <span className="text-[10px] sm:text-[11px] font-mono text-zinc-400 uppercase tracking-wider block text-center">
               Supported Media Sources

@@ -1,4 +1,5 @@
 import dns from 'dns'
+import { isTeraBoxOrShareBoxUrl, resolveTeraBoxOrShareBox, FolderResult } from './terabox-resolver'
 try {
   dns.setDefaultResultOrder('ipv4first')
 } catch {}
@@ -17,6 +18,7 @@ export interface StreamResult {
   fileSize?: string
   isMaintenance?: boolean
   maintenanceMessage?: string
+  folderData?: FolderResult
 }
 
 // Clean escaped HTML / unicode characters in scraped URLs
@@ -1251,11 +1253,17 @@ export async function resolveMediaUrl(url: string): Promise<StreamResult> {
     if (redditResult) return redditResult
   }
 
-  // 10. Universal Web Movie & Embedded Video Stream Extractor for Any Site
+  // 10. TeraBox, ShareBox, and Vividcast Folder & Media Resolver
+  if (isTeraBoxOrShareBoxUrl(trimmedUrl)) {
+    const teraResult = await resolveTeraBoxOrShareBox(trimmedUrl)
+    if (teraResult) return teraResult
+  }
+
+  // 11. Universal Web Movie & Embedded Video Stream Extractor for Any Site
   const movieResult = await resolveWebMovie(trimmedUrl)
   if (movieResult) return movieResult
 
-  // 11. Final Direct Video Inspect fallback
+  // 12. Final Direct Video Inspect fallback
   const genericInspect = await inspectDirectVideo(trimmedUrl)
   if (genericInspect) return genericInspect
 
