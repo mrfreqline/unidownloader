@@ -470,19 +470,172 @@ function parseYouTubeYtDlp(d: any): StreamResult {
   }
 }
 
-// 4. YouTube Dedicated Multi-Tier Resolver
+export function extractYouTubeVideoId(url: string): string | null {
+  try {
+    const trimmed = url.trim()
+    const regex = /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|embed|watch|shorts)\/|.*[?&]v=)|youtu\.be\/)([a-zA-Z0-9_-]{11})(?:[&?]|$)/i
+    const match = trimmed.match(regex)
+    if (match && match[1]) return match[1]
+    if (/^[a-zA-Z0-9_-]{11}$/.test(trimmed)) return trimmed
+    return null
+  } catch {
+    return null
+  }
+}
+
+// 4. YouTube Dedicated Multi-Tier Serverless Resolver
 export async function resolveYouTube(url: string): Promise<StreamResult | null> {
   const cleanUrl = url.trim()
+  const videoId = extractYouTubeVideoId(cleanUrl)
+  const canonicalUrl = videoId ? `https://www.youtube.com/watch?v=${videoId}` : cleanUrl
 
-  // Engine A: yt-dlp extractor (extracts direct MP4 and audio streams)
+  // Engine A: Movanest / SaveTube Cloudflare CDN API (100% Serverless & Vercel compatible)
+  try {
+    const apiUrl = `https://www.movanest.xyz/v2/ytdown?url=${encodeURIComponent(canonicalUrl)}`
+    const res = await fetch(apiUrl, {
+      headers: {
+        'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
+        Accept: 'application/json',
+      },
+      signal: AbortSignal.timeout(15000),
+    })
+
+    if (res.ok) {
+      const data = await res.json()
+      if (data?.status) {
+        const formats: any[] = Array.isArray(data.formats) ? data.formats : []
+        const videoFormats = formats.filter((f: any) => f.type === 'video' && f.url)
+        const audioFormats = formats.filter((f: any) => f.type === 'audio' && f.url)
+
+        // Sort video formats by quality descending (e.g. 2160, 1440, 1080, 720, 480, 360)
+        videoFormats.sort((a: any, b: any) => (Number(b.quality) || 0) - (Number(a.quality) || 0))
+
+        const bestVideo = videoFormats[0] || (data.download?.link ? { url: data.download.link, label: data.download.label } : null)
+        const bestAudio = audioFormats[0] || bestVideo
+
+        if (bestVideo?.url || bestAudio?.url) {
+          const qualities: string[] = []
+          videoFormats.forEach((f: any) => {
+            const lbl = f.label || (f.quality ? `${f.quality}p` : 'MP4')
+            if (!qualities.includes(lbl)) qualities.push(lbl)
+          })
+          if (!qualities.some(q => q.includes('720'))) qualities.push('720p HD')
+          qualities.push('Audio Only')
+
+          const durationSec = typeof data.duration === 'number' ? data.duration : parseInt(data.duration, 10) || undefined
+          const durationStr = durationSec
+            ? `${Math.floor(durationSec / 60)}:${String(durationSec % 60).padStart(2, '0')}`
+            : undefined
+          const thumb = data.thumbnail || (videoId ? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg` : '')
+
+          return {
+            title: data.title || 'YouTube Video',
+            thumbnail: thumb,
+            duration: durationStr,
+            uploader: 'YouTube Creator',
+            platform: 'YouTube',
+            qualities,
+            streamUrl: bestVideo?.url || bestAudio?.url,
+            downloadUrl: bestVideo?.url || bestAudio?.url,
+            audioUrl: bestAudio?.url || bestVideo?.url,
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('[YouTube Movanest Engine Warn]:', err)
+  }
+
+  // Engine B: SaveTube VIP CDN with AES-128 Decryption
+  if (videoId) {
+    try {
+      const { createDecipheriv } = await import('crypto')
+      const KEY = Buffer.from('C5D58EF67A7584E4A29F6C35BBC4EB12', 'hex')
+      const headers = {
+        'Content-Type': 'application/json',
+        Origin: 'https://yt.savetube.me',
+        'User-Agent':
+          'Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36 Chrome/130 Mobile Safari/537.36',
+      }
+
+      const cdnRes = await fetch('https://media.savetube.vip/api/random-cdn', {
+        headers,
+        signal: AbortSignal.timeout(6000),
+      })
+        .then(r => r.json())
+        .catch(() => null)
+
+      const cdn = cdnRes?.cdn || 'cdn401.savetube.vip'
+
+      const infoRes = await fetch(`https://${cdn}/v2/info`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ url: `https://www.youtube.com/watch?v=${videoId}` }),
+        signal: AbortSignal.timeout(8000),
+      })
+        .then(r => r.json())
+        .catch(() => null)
+
+      if (infoRes?.data) {
+        const enc = Buffer.from(infoRes.data, 'base64')
+        const iv = enc.subarray(0, 16)
+        const cipherText = enc.subarray(16)
+        const decipher = createDecipheriv('aes-128-cbc', KEY, iv)
+        const decrypted = Buffer.concat([decipher.update(cipherText), decipher.final()])
+        const meta = JSON.parse(decrypted.toString('utf8'))
+
+        if (meta?.key) {
+          const [videoDl, audioDl] = await Promise.all([
+            fetch(`https://${cdn}/download`, {
+              method: 'POST',
+              headers,
+              body: JSON.stringify({ id: videoId, downloadType: 'video', quality: '720', key: meta.key }),
+              signal: AbortSignal.timeout(8000),
+            })
+              .then(r => r.json())
+              .catch(() => null),
+            fetch(`https://${cdn}/download`, {
+              method: 'POST',
+              headers,
+              body: JSON.stringify({ id: videoId, downloadType: 'audio', quality: '128', key: meta.key }),
+              signal: AbortSignal.timeout(8000),
+            })
+              .then(r => r.json())
+              .catch(() => null),
+          ])
+
+          const videoUrl = videoDl?.data?.downloadUrl
+          const audioUrl = audioDl?.data?.downloadUrl || videoUrl
+
+          if (videoUrl || audioUrl) {
+            return {
+              title: meta.title || 'YouTube Video',
+              thumbnail: meta.thumbnail || `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
+              duration: meta.durationLabel,
+              uploader: 'YouTube Creator',
+              platform: 'YouTube',
+              qualities: ['1080p Full HD', '720p HD', '360p Standard', 'Audio Only'],
+              streamUrl: videoUrl || audioUrl,
+              downloadUrl: videoUrl || audioUrl,
+              audioUrl: audioUrl || videoUrl,
+            }
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('[YouTube SaveTube Direct Warn]:', err)
+    }
+  }
+
+  // Engine C: Local / host yt-dlp extractor (for local development or environments with python/yt-dlp)
   try {
     const { exec } = await import('child_process')
     const p = new Promise<StreamResult | null>((resolve) => {
-      const cmd = `python -m yt_dlp --dump-json --no-warnings --extractor-args "youtube:player_client=android,web,tv" "${cleanUrl}"`
-      exec(cmd, { maxBuffer: 20 * 1024 * 1024, timeout: 20000 }, (err, stdout) => {
+      const cmd = `python -m yt_dlp --dump-json --no-warnings --extractor-args "youtube:player_client=android,web,tv" "${canonicalUrl}"`
+      exec(cmd, { maxBuffer: 20 * 1024 * 1024, timeout: 15000 }, (err, stdout) => {
         if (err || !stdout) {
-          // Fallback to direct yt-dlp executable
-          exec(`yt-dlp --dump-json --no-warnings "${cleanUrl}"`, { maxBuffer: 20 * 1024 * 1024, timeout: 20000 }, (err2, stdout2) => {
+          exec(`yt-dlp --dump-json --no-warnings "${canonicalUrl}"`, { maxBuffer: 20 * 1024 * 1024, timeout: 15000 }, (err2, stdout2) => {
             if (err2 || !stdout2) return resolve(null)
             try {
               resolve(parseYouTubeYtDlp(JSON.parse(stdout2)))
@@ -506,12 +659,12 @@ export async function resolveYouTube(url: string): Promise<StreamResult | null> 
     console.warn('[YouTube yt-dlp error]:', err)
   }
 
-  // Engine B: ruhend-scraper ytsearch fallback (metadata + player)
+  // Engine D: ruhend-scraper search fallback
   try {
     const ruhendMod = await import('ruhend-scraper')
     const ruhend = ruhendMod.default || ruhendMod
     if (typeof ruhend?.ytsearch === 'function') {
-      const searchRes = await ruhend.ytsearch(cleanUrl)
+      const searchRes = await ruhend.ytsearch(canonicalUrl)
       const first = searchRes?.video?.[0]
       if (first) {
         return {
@@ -521,9 +674,9 @@ export async function resolveYouTube(url: string): Promise<StreamResult | null> 
           uploader: first.authorName || 'YouTube Creator',
           platform: 'YouTube',
           qualities: ['720p HD', '360p Standard', 'Audio Only'],
-          streamUrl: first.url || cleanUrl,
-          downloadUrl: first.url || cleanUrl,
-          audioUrl: first.url || cleanUrl,
+          streamUrl: first.url || canonicalUrl,
+          downloadUrl: first.url || canonicalUrl,
+          audioUrl: first.url || canonicalUrl,
         }
       }
     }
