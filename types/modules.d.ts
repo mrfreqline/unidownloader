@@ -18,3 +18,13 @@ declare module 'btch-downloader' {
   export const twitter: any
   export const youtube: any
 }
+
+declare module 'fluent-ffmpeg' {
+  const content: any
+  export default content
+}
+
+declare module 'ffmpeg-static' {
+  const path: string
+  export default path
+}

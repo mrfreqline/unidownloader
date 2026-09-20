@@ -2,12 +2,17 @@ import type { Metadata, Viewport } from 'next'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: 'UniDownloader — Universal Media Downloader',
-  description: 'Fast, ephemeral media downloader and converter with zero server retention.',
+  title: 'A2Z Downloader — Download Media. Simple & Fast.',
+  description: 'Download any video, movie, or audio in the world from TikTok, Instagram, YouTube, Facebook, Twitter/X, and direct links. Fast and simple with zero retention.',
+  icons: {
+    icon: '/logo-icon.jpg',
+    shortcut: '/logo-icon.jpg',
+    apple: '/logo-icon.jpg',
+  },
   appleWebApp: {
     capable: true,
     statusBarStyle: 'default',
-    title: 'UniDownloader',
+    title: 'A2Z Downloader',
   },
 }
 

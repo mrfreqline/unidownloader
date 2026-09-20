@@ -498,18 +498,35 @@ export default function Home() {
       <main className="flex-1 max-w-4xl w-full mx-auto px-3.5 sm:px-6 py-6 sm:py-10 space-y-6 sm:space-y-8">
         
         {/* Hero Section */}
-        <div className="text-center space-y-2.5 pt-2 sm:pt-4">
-          <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] sm:text-xs font-mono bg-zinc-100 dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400 border border-zinc-200 dark:border-zinc-800">
-            <Zap className="w-3 h-3 text-amber-500 shrink-0" />
-            Universal Media Protocol • Ephemeral Stream Engine
+        <div className="text-center space-y-3 pt-2 sm:pt-4">
+          <div className="flex justify-center">
+            <div className="relative w-16 h-16 sm:w-20 sm:h-20 rounded-2xl overflow-hidden shadow-2xl ring-2 ring-emerald-500/20 bg-black animate-in zoom-in-95 duration-200">
+              <img
+                src="/logo-icon.jpg"
+                alt="A2Z Downloader Logo"
+                className="w-full h-full object-contain"
+              />
+            </div>
           </div>
 
-          <h1 className="text-2xl sm:text-4xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100 leading-tight">
-            Download Any Video, Movie, or Audio in the World
+          <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] sm:text-xs font-mono bg-zinc-100 dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400 border border-zinc-200 dark:border-zinc-800">
+            <Zap className="w-3 h-3 text-emerald-500 shrink-0" />
+            Universal Media Protocol • Zero Retention Active
+          </div>
+
+          <h1 className="text-3xl sm:text-5xl font-black tracking-tight text-zinc-900 dark:text-zinc-100 leading-tight">
+            <span className="bg-gradient-to-r from-emerald-400 via-teal-300 to-cyan-400 bg-clip-text text-transparent">
+              A2Z
+            </span>{' '}
+            Downloader
           </h1>
 
+          <p className="text-sm sm:text-base font-semibold text-zinc-700 dark:text-zinc-300">
+            Download Media. Simple & Fast.
+          </p>
+
           <p className="text-xs sm:text-sm text-zinc-500 max-w-xl mx-auto leading-relaxed px-2">
-            Extract high-fidelity media from TikTok, Instagram, Facebook, Twitter/X, Twitch, Reddit, and direct movie links. Watch in-browser or download in 1 click.
+            Download any video, movie, or audio in the entire world. TikTok, Instagram, YouTube, Facebook, Twitter/X, and direct links in 1 click.
           </p>
         </div>
 
@@ -531,7 +548,7 @@ export default function Home() {
                   setMaintenanceMsg(null)
                 }}
                 onKeyDown={e => e.key === 'Enter' && handleAnalyze()}
-                placeholder="Paste link here (TikTok, Instagram, Facebook, Twitter, Twitch, or Movie URL)..."
+                placeholder="Paste link here (YouTube, TikTok, Instagram, Facebook, Twitter, Twitch, Movie URL)..."
                 className="flex-1 py-2 text-xs sm:text-sm bg-transparent text-zinc-900 dark:text-zinc-100 outline-none font-mono placeholder:text-zinc-400 placeholder:font-sans min-w-0"
               />
 
@@ -737,7 +754,10 @@ export default function Home() {
       {/* Minimal Footer */}
       <footer className="border-t border-zinc-200 dark:border-zinc-800/80 py-6 text-center text-xs text-zinc-400 font-mono">
         <div className="max-w-4xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-3">
-          <span>UniDownloader Engine • Personal Fair-Use Tool</span>
+          <div className="flex items-center gap-2">
+            <img src="/logo-icon.jpg" alt="A2Z" className="w-4 h-4 rounded-md object-cover inline" />
+            <span>A2Z Downloader • Download Media. Simple & Fast.</span>
+          </div>
           <div className="flex items-center gap-4 text-[11px]">
             <button
               onClick={() => setIsTokenModalOpen(true)}

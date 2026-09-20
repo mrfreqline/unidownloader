@@ -30,16 +30,23 @@ export default function Navbar({
         
         {/* Logo & Brand */}
         <div className="flex items-center gap-2 sm:gap-6 shrink-0">
-          <Link href="/" className="flex items-center gap-2 group">
-            <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-zinc-900 dark:bg-zinc-100 flex items-center justify-center text-white dark:text-zinc-950 transition group-hover:scale-105 shadow-xs shrink-0">
-              <Download className="w-3.5 h-3.5 sm:w-4 sm:h-4 stroke-[2.5]" />
+          <Link href="/" className="flex items-center gap-2.5 group">
+            <div className="relative w-8 h-8 sm:w-9 sm:h-9 rounded-xl overflow-hidden bg-black flex items-center justify-center shadow-xs shrink-0 ring-1 ring-zinc-200 dark:ring-zinc-800 group-hover:scale-105 transition">
+              <img
+                src="/logo-icon.jpg"
+                alt="A2Z Downloader"
+                className="w-full h-full object-cover"
+              />
             </div>
             <div className="flex flex-col">
-              <span className="font-semibold text-xs sm:text-sm tracking-tight text-zinc-900 dark:text-zinc-100">
-                UniDownloader
+              <span className="font-extrabold text-sm sm:text-base tracking-tight text-zinc-900 dark:text-zinc-100 flex items-center gap-0.5">
+                <span className="bg-gradient-to-r from-emerald-400 via-teal-300 to-cyan-400 bg-clip-text text-transparent">
+                  A2Z
+                </span>
+                <span>Downloader</span>
               </span>
               <span className="text-[9px] uppercase font-mono tracking-wider text-zinc-400 dark:text-zinc-500 hidden sm:inline">
-                Engine v2.0
+                Simple & Fast
               </span>
             </div>
           </Link>

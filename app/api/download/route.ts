@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { resolveMediaUrl } from '@/lib/downloader/stream-resolver'
+import { processMediaEnhancement } from '@/lib/downloader/enhancer'
 import dns from 'dns'
+import fs from 'fs'
+
 try {
   dns.setDefaultResultOrder('ipv4first')
 } catch {}
@@ -8,7 +11,7 @@ try {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
-    const { url, quality, mediaType, downloadUrl: providedDownloadUrl, title = 'media' } = body
+    const { url, quality, mediaType, downloadUrl: providedDownloadUrl, title = 'media', enhancement } = body
 
     if (!url && !providedDownloadUrl) {
       return NextResponse.json({ error: 'No media URL provided' }, { status: 400 })
@@ -28,6 +31,32 @@ export async function POST(req: NextRequest) {
         { error: 'Could not extract direct stream. Please try another link.' },
         { status: 400 }
       )
+    }
+
+    // Check if user requested Media Enhancement (trim, compress, convert container, audio normalize)
+    if (enhancement && enhancement.enabled) {
+      try {
+        const enhanced = await processMediaEnhancement(
+          targetDownloadUrl,
+          mediaType || 'video',
+          enhancement,
+          title
+        )
+
+        const fileBuffer = fs.readFileSync(enhanced.filePath)
+        enhanced.cleanup()
+
+        const responseHeaders = new Headers()
+        responseHeaders.set('Content-Type', enhanced.contentType)
+        responseHeaders.set('Content-Disposition', `attachment; filename="${enhanced.fileName}"`)
+        responseHeaders.set('Content-Length', fileBuffer.length.toString())
+
+        return new NextResponse(fileBuffer, {
+          headers: responseHeaders,
+        })
+      } catch (enhErr: any) {
+        console.warn('[Enhancement Fallback to direct stream]:', enhErr?.message || enhErr)
+      }
     }
 
     const cleanTitle = (title || 'download').slice(0, 40).replace(/[^\w\s.-]/gi, '_')

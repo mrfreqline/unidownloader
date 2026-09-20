@@ -23,11 +23,14 @@ export default function Pricing() {
       <header className="border-b border-zinc-200 dark:border-zinc-800 bg-white/80 dark:bg-zinc-950/80 backdrop-blur-md">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
           <Link href="/" className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-zinc-900 dark:bg-zinc-100 flex items-center justify-center text-white dark:text-zinc-950">
-              <Download className="w-4 h-4 stroke-[2.5]" />
+            <div className="relative w-8 h-8 rounded-xl overflow-hidden bg-black flex items-center justify-center shrink-0 ring-1 ring-zinc-200 dark:ring-zinc-800">
+              <img src="/logo-icon.jpg" alt="A2Z Downloader" className="w-full h-full object-cover" />
             </div>
-            <span className="font-semibold text-sm tracking-tight text-zinc-900 dark:text-zinc-100">
-              UniDownloader
+            <span className="font-extrabold text-sm tracking-tight text-zinc-900 dark:text-zinc-100 flex items-center gap-0.5">
+              <span className="bg-gradient-to-r from-emerald-400 via-teal-300 to-cyan-400 bg-clip-text text-transparent">
+                A2Z
+              </span>
+              <span>Downloader</span>
             </span>
           </Link>
 
@@ -53,7 +56,7 @@ export default function Pricing() {
             Free Community Media Credits
           </h1>
           <p className="text-xs sm:text-sm text-zinc-500 max-w-xl mx-auto leading-relaxed">
-            UniDownloader does not lock you into recurring credit card subscriptions. Audio and thumbnails are completely free forever, and video credits can be earned by supporting infrastructure sponsors.
+            A2Z Downloader does not lock you into recurring credit card subscriptions. Audio and thumbnails are completely free forever, and video credits can be earned by supporting infrastructure sponsors.
           </p>
         </div>
 

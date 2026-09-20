@@ -64,11 +64,14 @@ export default function Login() {
     <main className="min-h-screen bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 flex flex-col items-center justify-center px-4">
       {/* Brand Header */}
       <Link href="/" className="flex items-center gap-2.5 mb-6 group">
-        <div className="w-8 h-8 rounded-lg bg-zinc-900 dark:bg-zinc-100 flex items-center justify-center text-white dark:text-zinc-950 transition group-hover:scale-105 shadow-sm">
-          <Download className="w-4 h-4 stroke-[2.5]" />
+        <div className="relative w-8 h-8 rounded-xl overflow-hidden bg-black flex items-center justify-center shadow-sm shrink-0 ring-1 ring-zinc-200 dark:ring-zinc-800 group-hover:scale-105 transition">
+          <img src="/logo-icon.jpg" alt="A2Z Downloader" className="w-full h-full object-cover" />
         </div>
-        <span className="font-semibold text-base tracking-tight text-zinc-900 dark:text-zinc-100">
-          UniDownloader
+        <span className="font-extrabold text-base tracking-tight text-zinc-900 dark:text-zinc-100 flex items-center gap-0.5">
+          <span className="bg-gradient-to-r from-emerald-400 via-teal-300 to-cyan-400 bg-clip-text text-transparent">
+            A2Z
+          </span>
+          <span>Downloader</span>
         </span>
       </Link>
 

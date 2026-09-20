@@ -4,7 +4,7 @@ import Link from 'next/link'
 export default function TrustSafety() {
 
   const trustFeatures = [
-    { icon: '🔐', title: 'SSL Encryption', desc: 'All data transferred between you and UniDownloader is encrypted end-to-end using SSL/TLS. Your connection is always secure.' },
+    { icon: '🔐', title: 'SSL Encryption', desc: 'All data transferred between you and A2Z Downloader is encrypted end-to-end using SSL/TLS. Your connection is always secure.' },
     { icon: '🔍', title: 'Virus Scanning', desc: 'Every file is scanned before delivery using industry-standard malware detection. We check every download so you do not have to worry.' },
     { icon: '🔢', title: 'File Hash Verification', desc: 'Every downloaded file comes with an MD5 and SHA256 hash so you can verify the file was not tampered with during transfer.' },
     { icon: '🚫', title: 'URL Safety Check', desc: 'Every URL you paste is checked against known malware and scam databases before we process it. Bad links are blocked automatically.' },
@@ -12,7 +12,7 @@ export default function TrustSafety() {
     { icon: '⚖️', title: 'DMCA Compliance', desc: 'We take copyright seriously. Rights holders can submit takedown requests and we respond within 48 hours.' },
     { icon: '🔒', title: 'Secure Authentication', desc: 'Passwords are hashed using bcrypt. We never store plain text passwords. OAuth logins use industry standard protocols.' },
     { icon: '🌐', title: 'Rate Limiting', desc: 'All API endpoints are rate limited to prevent abuse. Free users get 5 downloads per day to keep the service fair for everyone.' },
-    { icon: '👤', title: 'Personal Use Only', desc: 'UniDownloader is built for personal use only. We require all users to agree to our terms before downloading anything.' },
+    { icon: '👤', title: 'Personal Use Only', desc: 'A2Z Downloader is built for personal use only. We require all users to agree to our terms before downloading anything.' },
     { icon: '📊', title: 'Transparency Report', desc: 'We publish a monthly transparency report showing takedown requests received, abuse reports, and service uptime statistics.' },
   ]
 
@@ -37,13 +37,17 @@ export default function TrustSafety() {
     <main className="min-h-screen bg-white dark:bg-gray-950 text-gray-900 dark:text-white">
 
       <nav className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950">
-        <Link href="/" className="flex items-center gap-2">
-          <span className="text-2xl">⬇️</span>
-          <span className="text-xl font-bold text-gray-900 dark:text-white">UniDownloader</span>
+        <Link href="/" className="flex items-center gap-2.5">
+          <div className="relative w-8 h-8 rounded-xl overflow-hidden bg-black flex items-center justify-center shrink-0 ring-1 ring-zinc-200 dark:ring-zinc-800">
+            <img src="/logo-icon.jpg" alt="A2Z Downloader" className="w-full h-full object-cover" />
+          </div>
+          <span className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-0.5">
+            <span className="text-emerald-500">A2Z</span> Downloader
+          </span>
         </Link>
         <div className="flex gap-3">
           <Link href="/login" className="text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white text-sm transition">Login</Link>
-          <Link href="/signup" className="bg-blue-600 hover:bg-blue-500 text-white text-sm px-4 py-2 rounded-lg transition">Sign Up Free</Link>
+          <Link href="/signup" className="bg-emerald-600 hover:bg-emerald-500 text-white text-sm px-4 py-2 rounded-lg transition font-medium">Sign Up Free</Link>
         </div>
       </nav>
 
@@ -54,7 +58,7 @@ export default function TrustSafety() {
         </div>
         <h1 className="text-4xl md:text-5xl font-bold mb-3">Trust and Safety</h1>
         <p className="text-gray-500 dark:text-gray-400 text-lg max-w-xl mx-auto">
-          We built UniDownloader with security and transparency at its core.
+          We built A2Z Downloader with security and transparency at its core.
         </p>
       </section>
 
@@ -94,21 +98,21 @@ export default function TrustSafety() {
         <div className="bg-gray-100 dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-2xl p-8">
           <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-3">⚖️ DMCA Policy</h2>
           <p className="text-gray-500 text-sm leading-relaxed mb-4">
-            UniDownloader respects intellectual property rights. If you believe content downloaded through our service infringes your copyright, please contact us with the following information:
+            A2Z Downloader respects intellectual property rights. If you believe content downloaded through our service infringes your copyright, please contact us with the following information:
           </p>
           <div className="flex flex-col gap-2 mb-6">
             {dmcaItems.map((item) => (
               <div key={item} className="flex items-start gap-2 text-sm text-gray-600 dark:text-gray-400">
-                <span className="text-blue-500 mt-0.5">•</span>
+                <span className="text-emerald-500 mt-0.5">•</span>
                 <span>{item}</span>
               </div>
             ))}
           </div>
-          <div className="bg-blue-950 border border-blue-800 rounded-xl p-4">
-            <p className="text-blue-300 text-sm">
-              📧 Send DMCA requests to: <span className="font-semibold text-blue-200">dmca@unidownloader.com</span>
+          <div className="bg-emerald-950/40 border border-emerald-800/60 rounded-xl p-4">
+            <p className="text-emerald-300 text-sm">
+              📧 Send DMCA requests to: <span className="font-semibold text-emerald-200">dmca@a2zdownloader.com</span>
               <br />
-              <span className="text-blue-400 text-xs">We respond to all valid requests within 48 hours.</span>
+              <span className="text-emerald-400/80 text-xs">We respond to all valid requests within 48 hours.</span>
             </p>
           </div>
         </div>
@@ -139,11 +143,11 @@ export default function TrustSafety() {
       </section>
 
       <section className="px-4 pb-16 max-w-3xl mx-auto">
-        <div className="bg-yellow-950 border border-yellow-800 rounded-2xl p-6 text-center">
+        <div className="bg-amber-950/40 border border-amber-800/60 rounded-2xl p-6 text-center">
           <div className="text-3xl mb-2">⚠️</div>
-          <h3 className="font-bold text-yellow-300 mb-2">Personal Use Only</h3>
-          <p className="text-yellow-400 text-sm leading-relaxed">
-            UniDownloader is intended for personal, non-commercial use only.
+          <h3 className="font-bold text-amber-300 mb-2">Personal Use Only</h3>
+          <p className="text-amber-400 text-sm leading-relaxed">
+            A2Z Downloader is intended for personal, non-commercial use only.
             Downloading copyrighted content without permission may violate the terms of service of the source platform.
             Always ensure you have the right to download content before doing so.
           </p>
@@ -154,8 +158,8 @@ export default function TrustSafety() {
         <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-3">Have a safety concern?</h2>
         <p className="text-gray-500 text-sm mb-6">Report abuse, security vulnerabilities, or safety issues directly to our team.</p>
         <Link
-          href="mailto:safety@unidownloader.com"
-          className="inline-flex items-center gap-2 bg-green-600 hover:bg-green-500 text-white px-6 py-3 rounded-xl font-semibold text-sm transition"
+          href="mailto:safety@a2zdownloader.com"
+          className="inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white px-6 py-3 rounded-xl font-semibold text-sm transition"
         >
           📧 Contact Safety Team
         </Link>
@@ -163,7 +167,7 @@ export default function TrustSafety() {
 
       <footer className="border-t border-gray-200 dark:border-gray-800 px-6 py-6 text-center text-gray-400 dark:text-gray-600 text-sm">
         <p>
-          © 2025 UniDownloader • For personal use only •{' '}
+          © 2026 A2Z Downloader • For personal use only •{' '}
           <Link href="/trust" className="hover:text-gray-600 dark:hover:text-gray-400 transition">Privacy</Link> •{' '}
           <Link href="/trust" className="hover:text-gray-600 dark:hover:text-gray-400 transition">DMCA</Link> •{' '}
           <Link href="/pricing" className="hover:text-gray-600 dark:hover:text-gray-400 transition">Pricing</Link>
