@@ -10,6 +10,7 @@ import { EnhancementSettings } from '@/components/MediaEnhancer'
 import { supabase } from '@/lib/supabase'
 import MagicProgressBar from '@/components/MagicProgressBar'
 import FolderExplorer from '@/components/FolderExplorer'
+import AdBanner from '@/components/AdBanner'
 import { FolderResult } from '@/lib/downloader/terabox-resolver'
 import {
   Link2,
@@ -690,6 +691,9 @@ export default function Home() {
           </div>
         </div>
 
+        {/* Top Sponsor Ad Banner */}
+        <AdBanner slot="top" />
+
         {/* Magic Progress Bar Loading Animation */}
         {(isAnalyzing || isDownloading) && (
           <MagicProgressBar
@@ -853,6 +857,9 @@ export default function Home() {
             </p>
           </div>
         </div>
+
+        {/* Bottom Sponsor Ad Banner */}
+        <AdBanner slot="bottom" />
 
       </main>
 

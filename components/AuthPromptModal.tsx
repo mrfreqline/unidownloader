@@ -125,7 +125,7 @@ export default function AuthPromptModal({
             </div>
             <div>
               <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-                {mode === 'login' ? 'Sign in to UniDownloader' : 'Create an Account'}
+                {mode === 'login' ? 'Sign in to A2Z Downloader' : 'Create an Account'}
               </h2>
               <p className="text-xs text-zinc-500">
                 {reason === '4k'
