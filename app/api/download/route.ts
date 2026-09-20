@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { resolveMediaUrl } from '@/lib/downloader/stream-resolver'
+import dns from 'dns'
+try {
+  dns.setDefaultResultOrder('ipv4first')
+} catch {}
 
 export async function POST(req: NextRequest) {
   try {

@@ -1,3 +1,8 @@
+import dns from 'dns'
+try {
+  dns.setDefaultResultOrder('ipv4first')
+} catch {}
+
 export interface StreamResult {
   title: string
   thumbnail?: string
@@ -251,46 +256,122 @@ export async function resolveFacebook(url: string): Promise<StreamResult | null>
 
 // 3. Instagram Dedicated Multi-Tier Resolver
 export async function resolveInstagram(url: string): Promise<StreamResult | null> {
-  const shortcodeMatch =
-    url.match(/(?:reel|reels|p|tv)\/([a-zA-Z0-9_-]+)/)
+  const cleanUrl = url.split('?')[0].trim()
+  const shortcodeMatch = cleanUrl.match(/(?:reel|reels|p|tv)\/([a-zA-Z0-9_-]+)/)
   const shortcode = shortcodeMatch ? shortcodeMatch[1] : null
 
-  // Engine A: Dedicated Instagram API Proxy
+  // Engine A: ruhend-scraper igdl
   try {
-    const apiUrl = `https://instagram-video-downloader-mu.vercel.app/api/video?postUrl=${encodeURIComponent(url)}`
-    const res = await fetch(apiUrl, {
-      headers: {
-        'User-Agent':
-          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-      },
-      signal: AbortSignal.timeout(8000),
-    })
-
-    if (res.ok) {
-      const data = await res.json()
-      if (data?.status === 'success' && data?.data?.videoUrl) {
-        const videoUrl = data.data.videoUrl
+    const ruhendMod = await import('ruhend-scraper')
+    const ruhend = ruhendMod.default || ruhendMod
+    if (typeof ruhend?.igdl === 'function') {
+      const igRes = await ruhend.igdl(cleanUrl)
+      if (Array.isArray(igRes) && igRes.length > 0 && typeof igRes[0] === 'string' && igRes[0].startsWith('http')) {
+        const videoUrl = igRes[0]
         return {
-          title: `Instagram Video (${shortcode || 'Reel'})`,
+          title: `Instagram Reel (${shortcode || 'Video'})`,
           platform: 'Instagram',
           thumbnail: '',
           uploader: 'Instagram Creator',
-          qualities: ['HD Original', 'Standard MP4', 'Audio MP3'],
+          qualities: ['1080p Full HD', '720p HD', 'Audio MP3'],
           streamUrl: videoUrl,
           downloadUrl: videoUrl,
+          audioUrl: videoUrl,
         }
-      } else if (data?.message?.includes('not public')) {
-        throw new Error('This Instagram post is private, age-restricted, or requires login to view. Please use a public post or reel.')
       }
     }
-  } catch (err: any) {
-    if (err?.message?.includes('private')) {
-      throw err
-    }
-    console.warn('[Instagram Dedicated API Warn]:', err)
+  } catch (err) {
+    console.warn('[Instagram ruhend.igdl warn]:', err)
   }
 
-  // Engine B: Embed Scraper for public posts
+  // Engine B: ruhend-scraper igdl2
+  try {
+    const ruhendMod = await import('ruhend-scraper')
+    const ruhend = ruhendMod.default || ruhendMod
+    if (typeof ruhend?.igdl2 === 'function') {
+      const igRes2 = await ruhend.igdl2(cleanUrl)
+      if (igRes2?.status && Array.isArray(igRes2?.data) && igRes2.data.length > 0) {
+        const item = igRes2.data[0]
+        const videoUrl = item.url
+        if (videoUrl) {
+          return {
+            title: `Instagram Reel (${shortcode || 'Video'})`,
+            platform: 'Instagram',
+            thumbnail: item.thumbnail || '',
+            uploader: 'Instagram Creator',
+            qualities: ['1080p Full HD', '720p HD', 'Audio MP3'],
+            streamUrl: videoUrl,
+            downloadUrl: videoUrl,
+            audioUrl: videoUrl,
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('[Instagram ruhend.igdl2 warn]:', err)
+  }
+
+  // Engine C: btch-downloader igdl
+  try {
+    const btchMod = await import('btch-downloader')
+    const btch = btchMod.default || btchMod
+    if (typeof btch?.igdl === 'function') {
+      const btchRes = await btch.igdl(cleanUrl)
+      if (btchRes?.status && Array.isArray(btchRes?.result) && btchRes.result.length > 0) {
+        const item = btchRes.result[0]
+        const videoUrl = item.url
+        if (videoUrl) {
+          return {
+            title: `Instagram Video (${shortcode || 'Reel'})`,
+            platform: 'Instagram',
+            thumbnail: item.thumbnail || '',
+            uploader: 'Instagram Creator',
+            qualities: ['1080p Full HD', '720p HD', 'Audio MP3'],
+            streamUrl: videoUrl,
+            downloadUrl: videoUrl,
+            audioUrl: videoUrl,
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('[Instagram btch.igdl warn]:', err)
+  }
+
+  // Engine D: Local yt-dlp
+  try {
+    const { exec } = await import('child_process')
+    const p = new Promise<StreamResult | null>((resolve) => {
+      exec(`python -m yt_dlp --dump-json --no-warnings "${cleanUrl}"`, { maxBuffer: 10 * 1024 * 1024, timeout: 12000 }, (err, stdout) => {
+        if (err || !stdout) return resolve(null)
+        try {
+          const d = JSON.parse(stdout)
+          if (d.url) {
+            resolve({
+              title: d.title || `Instagram Video (${shortcode || 'Reel'})`,
+              platform: 'Instagram',
+              thumbnail: d.thumbnail || '',
+              uploader: d.uploader || 'Instagram Creator',
+              qualities: ['1080p Full HD', '720p HD', 'Audio MP3'],
+              streamUrl: d.url,
+              downloadUrl: d.url,
+              audioUrl: d.url,
+            })
+          } else {
+            resolve(null)
+          }
+        } catch {
+          resolve(null)
+        }
+      })
+    })
+    const ytDlpRes = await p
+    if (ytDlpRes) return ytDlpRes
+  } catch (err) {
+    console.warn('[Instagram yt-dlp warn]:', err)
+  }
+
+  // Engine E: Embed Scraper for public posts
   if (shortcode) {
     try {
       const embedUrl = `https://www.instagram.com/p/${shortcode}/embed/captioned/`
@@ -319,9 +400,10 @@ export async function resolveInstagram(url: string): Promise<StreamResult | null
             platform: 'Instagram',
             thumbnail: thumbMatch ? cleanEscapedUrl(thumbMatch[1]) : undefined,
             uploader: 'Instagram Creator',
-            qualities: ['HD Video MP4', 'Audio MP3'],
+            qualities: ['1080p Full HD', '720p HD', 'Audio MP3'],
             streamUrl: videoUrl,
             downloadUrl: videoUrl,
+            audioUrl: videoUrl,
           }
         }
       }
@@ -333,7 +415,126 @@ export async function resolveInstagram(url: string): Promise<StreamResult | null
   throw new Error('This Instagram post is private or inaccessible without login. Please ensure the link is public and accessible.')
 }
 
-// 4. Twitter / X Dedicated Resolver
+// Helper to parse yt-dlp metadata for YouTube
+function parseYouTubeYtDlp(d: any): StreamResult {
+  const title = d.title || 'YouTube Video'
+  const thumbnail = d.thumbnail || (d.thumbnails && d.thumbnails[d.thumbnails.length - 1]?.url) || ''
+  const duration = d.duration
+    ? `${Math.floor(d.duration / 60)}:${String(d.duration % 60).padStart(2, '0')}`
+    : undefined
+  const uploader = d.uploader || d.channel || 'YouTube Creator'
+
+  const formatsWithUrl = (d.formats || []).filter((f: any) => f.url && f.url.startsWith('http'))
+
+  // 1. Progressive video formats (contains BOTH video and audio)
+  const progressive = formatsWithUrl.filter(
+    (f: any) => f.vcodec !== 'none' && f.acodec !== 'none'
+  )
+  progressive.sort((a: any, b: any) => (b.height || 0) - (a.height || 0))
+
+  // 2. Separate video formats
+  const videoOnly = formatsWithUrl.filter((f: any) => f.vcodec !== 'none')
+  videoOnly.sort((a: any, b: any) => (b.height || 0) - (a.height || 0))
+
+  // 3. Audio-only formats (e.g. itag 140 m4a / itag 251 opus)
+  const audioOnly = formatsWithUrl.filter(
+    (f: any) => f.vcodec === 'none' && f.acodec !== 'none'
+  )
+  audioOnly.sort((a: any, b: any) => (b.abr || 0) - (a.abr || 0))
+
+  // Select best video stream (prefer progressive format with audio for seamless playback)
+  const bestVideo = progressive[0] || videoOnly[0] || formatsWithUrl[0]
+  // Select best audio stream for MP3 download
+  const bestAudio = audioOnly[0] || progressive[0] || bestVideo
+
+  const qualities: string[] = []
+  if (videoOnly.some((f: any) => (f.height || 0) >= 1080)) {
+    qualities.push('1080p Full HD')
+  }
+  if (progressive.some((f: any) => (f.height || 0) >= 720) || videoOnly.some((f: any) => (f.height || 0) >= 720)) {
+    qualities.push('720p HD')
+  }
+  qualities.push('360p Standard')
+  qualities.push('Audio Only')
+
+  return {
+    title,
+    thumbnail,
+    duration,
+    uploader,
+    platform: 'YouTube',
+    qualities,
+    streamUrl: bestVideo?.url,
+    downloadUrl: bestVideo?.url,
+    audioUrl: bestAudio?.url,
+  }
+}
+
+// 4. YouTube Dedicated Multi-Tier Resolver
+export async function resolveYouTube(url: string): Promise<StreamResult | null> {
+  const cleanUrl = url.trim()
+
+  // Engine A: yt-dlp extractor (extracts direct MP4 and audio streams)
+  try {
+    const { exec } = await import('child_process')
+    const p = new Promise<StreamResult | null>((resolve) => {
+      const cmd = `python -m yt_dlp --dump-json --no-warnings --extractor-args "youtube:player_client=android,web,tv" "${cleanUrl}"`
+      exec(cmd, { maxBuffer: 20 * 1024 * 1024, timeout: 20000 }, (err, stdout) => {
+        if (err || !stdout) {
+          // Fallback to direct yt-dlp executable
+          exec(`yt-dlp --dump-json --no-warnings "${cleanUrl}"`, { maxBuffer: 20 * 1024 * 1024, timeout: 20000 }, (err2, stdout2) => {
+            if (err2 || !stdout2) return resolve(null)
+            try {
+              resolve(parseYouTubeYtDlp(JSON.parse(stdout2)))
+            } catch {
+              resolve(null)
+            }
+          })
+          return
+        }
+        try {
+          resolve(parseYouTubeYtDlp(JSON.parse(stdout)))
+        } catch {
+          resolve(null)
+        }
+      })
+    })
+
+    const ytRes = await p
+    if (ytRes) return ytRes
+  } catch (err) {
+    console.warn('[YouTube yt-dlp error]:', err)
+  }
+
+  // Engine B: ruhend-scraper ytsearch fallback (metadata + player)
+  try {
+    const ruhendMod = await import('ruhend-scraper')
+    const ruhend = ruhendMod.default || ruhendMod
+    if (typeof ruhend?.ytsearch === 'function') {
+      const searchRes = await ruhend.ytsearch(cleanUrl)
+      const first = searchRes?.video?.[0]
+      if (first) {
+        return {
+          title: first.title || 'YouTube Video',
+          thumbnail: first.thumbnail || '',
+          duration: first.duration || `${first.durationS || 0}s`,
+          uploader: first.authorName || 'YouTube Creator',
+          platform: 'YouTube',
+          qualities: ['720p HD', '360p Standard', 'Audio Only'],
+          streamUrl: first.url || cleanUrl,
+          downloadUrl: first.url || cleanUrl,
+          audioUrl: first.url || cleanUrl,
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('[YouTube ruhend fallback warn]:', err)
+  }
+
+  return null
+}
+
+// 5. Twitter / X Dedicated Resolver
 export async function resolveTwitter(url: string): Promise<StreamResult | null> {
   const statusMatch = url.match(/status\/(\d+)/)
   const tweetId = statusMatch ? statusMatch[1] : null
@@ -375,17 +576,11 @@ export async function resolveTwitter(url: string): Promise<StreamResult | null> 
 export async function resolveMediaUrl(url: string): Promise<StreamResult> {
   const trimmedUrl = url.trim()
 
-  // 1. YouTube Maintenance Guard
+  // 1. YouTube Dedicated High-Speed Video & Audio Resolver
   if (isYouTubeUrl(trimmedUrl)) {
-    return {
-      title: 'YouTube Engine Under Maintenance',
-      platform: 'YouTube',
-      qualities: [],
-      downloadUrl: '',
-      isMaintenance: true,
-      maintenanceMessage:
-        'YouTube Engine is currently undergoing scheduled maintenance for v2.5 upgrade. TikTok, Facebook, Instagram, Twitter/X, and Direct Movie links are 100% operational!',
-    }
+    const ytResult = await resolveYouTube(trimmedUrl)
+    if (ytResult) return ytResult
+    throw new Error('Unable to extract YouTube video. Please ensure the link is public and accessible.')
   }
 
   // 2. Direct Movie / Video file inspection
