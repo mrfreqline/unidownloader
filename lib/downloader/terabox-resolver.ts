@@ -108,10 +108,19 @@ export function extractLinkId(url: string): string | null {
 // Extract TeraBox shorturl key
 export function extractTeraBoxKey(url: string): string | null {
   try {
-    const match = url.match(/(?:\/s\/1|\/s\/|surl=)([0-9a-zA-Z_-]+)/)
-    return match ? match[1] : null
-  } catch {
+    const parsed = new URL(url)
+    const surlParam = parsed.searchParams.get('surl')
+    if (surlParam) {
+      return surlParam.replace(/^1/, '')
+    }
+    const match = url.match(/(?:\/s\/1|\/s\/)([0-9a-zA-Z_-]+)/)
+    if (match && match[1]) {
+      return match[1].replace(/^1/, '')
+    }
     return null
+  } catch {
+    const match = url.match(/(?:\/s\/1|\/s\/|surl=)([0-9a-zA-Z_-]+)/)
+    return match && match[1] ? match[1].replace(/^1/, '') : null
   }
 }
 
@@ -276,34 +285,64 @@ export async function resolveTeraBoxOrShareBox(
     }
   }
 
-  // B. TeraBox Standard shorturl fallback (terabox.com / 1024tera.com)
+  // B. TeraBox Native Handshake & Fallback Resolver (1024tera.com / 1024terabox.com / terabox.com)
   const teraKey = extractTeraBoxKey(url)
   if (teraKey) {
     try {
-      // Use multi-tier open Terabox API proxies
-      const apiEndpoints = [
-        `https://terabox-api.graydeveloper.com/api?url=${encodeURIComponent(url)}`,
-        `https://yt-streamer.onrender.com/terabox?url=${encodeURIComponent(url)}`,
-      ]
+      const pageUrl = `https://www.1024tera.com/sharing/link?surl=${teraKey}`
+      const pageRes = await fetch(pageUrl, {
+        headers: {
+          'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        },
+      })
 
-      for (const ep of apiEndpoints) {
-        try {
-          const res = await fetch(ep, {
-            headers: {
-              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
-            },
-            signal: AbortSignal.timeout(6000),
-          })
-          if (!res.ok) continue
-          const data = await res.json()
+      if (pageRes.ok) {
+        const rawCookies = (pageRes.headers as any).getSetCookie
+          ? (pageRes.headers as any).getSetCookie()
+          : [pageRes.headers.get('set-cookie')]
+        let cookieStr = ((rawCookies || []) as (string | null | undefined)[])
+          .filter((c): c is string => Boolean(c))
+          .map(c => c.split(';')[0])
+          .join('; ')
 
-          const fileList = data?.list || data?.files || (data?.download_link ? [data] : [])
-          if (fileList.length > 0) {
-            const folderItems: FolderItem[] = fileList.map((item: any, idx: number) => {
-              const name = item.filename || item.server_filename || item.title || `File_${idx + 1}`
-              const isDir = Boolean(item.isdir === 1 || item.is_dir)
-              const dlink = item.download_link || item.dlink || item.direct_link || item.url
-              const size = item.size ? formatBytes(Number(item.size)) : ''
+        const ndus = process.env.TERABOX_NDUS_COOKIE || process.env.TERABOX_COOKIE || ''
+        if (ndus) {
+          cookieStr += `; ndus=${ndus}`
+        }
+
+        const html = await pageRes.text()
+        const tokenMatch = html.match(/fn%28%22([A-F0-9]+)%22%29/)
+        const jsToken = tokenMatch ? tokenMatch[1] : ''
+
+        const listUrl = `https://www.1024tera.com/share/list?app_id=250528&shorturl=${teraKey}&root=1&jsToken=${jsToken}`
+        const listRes = await fetch(listUrl, {
+          headers: {
+            'User-Agent':
+              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Cookie': cookieStr,
+            'Referer': pageUrl,
+          },
+        })
+
+        if (listRes.ok) {
+          const listData = await listRes.json()
+
+          if (listData?.errno === 0 && listData?.list && listData.list.length > 0) {
+            const folderItems: FolderItem[] = listData.list.map((item: any, idx: number) => {
+              const name = item.server_filename || item.filename || `File_${idx + 1}`
+              const isDir = Boolean(item.isdir === 1 || item.isdir === '1')
+              const size = item.size ? formatBytes(Number(item.size)) : isDir ? 'Folder' : ''
+              const thumb =
+                item.thumbs?.url3 || item.thumbs?.url2 || item.thumbs?.url1 || item.thumbs?.icon || ''
+              const isVideo = Boolean(
+                item.category === '1' ||
+                name.endsWith('.mp4') ||
+                name.endsWith('.mkv') ||
+                name.endsWith('.webm') ||
+                name.endsWith('.mov')
+              )
 
               return {
                 id: item.fs_id || String(idx),
@@ -311,39 +350,41 @@ export async function resolveTeraBoxOrShareBox(
                 isDir,
                 size,
                 sizeBytes: Number(item.size) || 0,
-                thumbnail: item.thumb || item.thumbnail || '',
-                isVideo: name.endsWith('.mp4') || name.endsWith('.mkv') || name.endsWith('.webm'),
-                streamUrl: dlink,
-                downloadUrl: dlink,
+                thumbnail: thumb,
+                isVideo,
+                streamUrl: item.dlink || pageUrl,
+                downloadUrl: item.dlink || pageUrl,
               }
             })
 
-            const first = folderItems.find(i => !i.isDir) || folderItems[0]
-            const title = first?.name || 'TeraBox Shared Collection'
+            const first =
+              folderItems.find(i => !i.isDir && i.isVideo) || folderItems.find(i => !i.isDir) || folderItems[0]
+            const cleanTitle =
+              first?.name || listData.title?.replace(/^\//, '') || 'TeraBox Shared Collection'
 
             return {
-              title,
+              title: cleanTitle,
               thumbnail: first?.thumbnail || '',
               platform: 'TeraBox',
               qualities: ['Original Quality', 'High Speed', 'Audio Only'],
-              streamUrl: first?.streamUrl || first?.downloadUrl || url,
-              downloadUrl: first?.downloadUrl || url,
+              streamUrl: first?.streamUrl || first?.downloadUrl || pageUrl,
+              downloadUrl: first?.downloadUrl || pageUrl,
               isDirectMovie: Boolean(first?.isVideo),
               fileSize: first?.size || `${folderItems.length} items`,
               uploader: 'TeraBox User',
               folderData: {
                 isFolder: true,
-                folderTitle: title,
+                folderTitle: cleanTitle,
                 platform: 'TeraBox',
                 linkId: teraKey,
                 items: folderItems,
               },
             }
           }
-        } catch {}
+        }
       }
-    } catch (err) {
-      console.warn('[TeraBox Fallback Error]:', err)
+    } catch (nativeErr) {
+      console.warn('[TeraBox Native Resolver Error]:', nativeErr)
     }
   }
 
