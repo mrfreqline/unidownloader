@@ -46,16 +46,65 @@ export async function POST(req: NextRequest) {
         const fileBuffer = fs.readFileSync(enhanced.filePath)
         enhanced.cleanup()
 
-        const responseHeaders = new Headers()
-        responseHeaders.set('Content-Type', enhanced.contentType)
-        responseHeaders.set('Content-Disposition', `attachment; filename="${enhanced.fileName}"`)
-        responseHeaders.set('Content-Length', fileBuffer.length.toString())
+        // Upload enhanced media to high-speed Supabase ephemeral CDN
+        // This completely overcomes Vercel's 4.5MB serverless payload limit & timeout constraints
+        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+        const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
-        return new NextResponse(fileBuffer, {
-          headers: responseHeaders,
-        })
+        if (supabaseUrl && supabaseKey) {
+          try {
+            const { createClient } = await import('@supabase/supabase-js')
+            const sb = createClient(supabaseUrl, supabaseKey)
+            const storageKey = `enh_${Date.now()}_${enhanced.fileName}`
+
+            const { error: uploadError } = await sb.storage
+              .from('ephemeral-downloads')
+              .upload(storageKey, fileBuffer, {
+                contentType: enhanced.contentType,
+                upsert: true,
+              })
+
+            if (!uploadError) {
+              const { data: urlData } = sb.storage
+                .from('ephemeral-downloads')
+                .getPublicUrl(storageKey)
+
+              if (urlData?.publicUrl) {
+                return NextResponse.json({
+                  redirectUrl: urlData.publicUrl,
+                  filename: enhanced.fileName,
+                })
+              }
+            } else {
+              console.warn('[Supabase Ephemeral Storage Upload Warning]:', uploadError)
+            }
+          } catch (sbErr) {
+            console.warn('[Supabase Ephemeral Storage Error]:', sbErr)
+          }
+        }
+
+        // Direct stream fallback for smaller files (< 4.2MB)
+        if (fileBuffer.length < 4.2 * 1024 * 1024) {
+          const responseHeaders = new Headers()
+          responseHeaders.set('Content-Type', enhanced.contentType)
+          responseHeaders.set('Content-Disposition', `attachment; filename="${enhanced.fileName}"`)
+          responseHeaders.set('Content-Length', fileBuffer.length.toString())
+
+          return new NextResponse(fileBuffer, {
+            headers: responseHeaders,
+          })
+        }
+
+        return NextResponse.json(
+          { error: 'Enhanced media file exceeded serverless transmission limits. Please select a shorter duration or balanced compression.' },
+          { status: 500 }
+        )
       } catch (enhErr: any) {
-        console.warn('[Enhancement Fallback to direct stream]:', enhErr?.message || enhErr)
+        console.error('[Enhancement Processing Error]:', enhErr?.message || enhErr)
+        return NextResponse.json(
+          { error: `Media Enhancement failed: ${enhErr?.message || 'Processing error'}. Please try a shorter duration or balanced profile.` },
+          { status: 500 }
+        )
       }
     }
 

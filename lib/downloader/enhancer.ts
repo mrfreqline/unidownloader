@@ -3,8 +3,40 @@ import ffmpegPath from 'ffmpeg-static'
 import path from 'path'
 import os from 'os'
 import fs from 'fs'
+import { pipeline } from 'stream/promises'
 
 function getFfmpegBinary(): string {
+  // On Linux (Vercel Lambda), copy binary to /tmp and ensure 0o755 permissions
+  if (process.platform === 'linux') {
+    const tmpBinary = path.join(os.tmpdir(), 'ffmpeg')
+    if (fs.existsSync(tmpBinary)) {
+      try {
+        fs.chmodSync(tmpBinary, 0o755)
+        return tmpBinary
+      } catch {}
+    }
+
+    const candidates = [
+      typeof ffmpegPath === 'string' ? ffmpegPath : '',
+      path.join(process.cwd(), 'node_modules', 'ffmpeg-static', 'ffmpeg'),
+      path.join(process.cwd(), '.next', 'server', 'node_modules', 'ffmpeg-static', 'ffmpeg'),
+      '/var/task/node_modules/ffmpeg-static/ffmpeg',
+    ].filter(Boolean)
+
+    for (const cand of candidates) {
+      if (fs.existsSync(cand)) {
+        try {
+          fs.copyFileSync(cand, tmpBinary)
+          fs.chmodSync(tmpBinary, 0o755)
+          return tmpBinary
+        } catch (e) {
+          console.warn('[FFmpeg copy to /tmp failed]:', e)
+        }
+      }
+    }
+  }
+
+  // Windows or local fallback
   const localBinary = path.join(
     process.cwd(),
     'node_modules',
@@ -17,10 +49,13 @@ function getFfmpegBinary(): string {
   return typeof ffmpegPath === 'string' ? ffmpegPath : 'ffmpeg'
 }
 
-try {
-  ffmpeg.setFfmpegPath(getFfmpegBinary())
-} catch (err) {
-  console.warn('[FFmpeg binary path warn]:', err)
+function ensureFfmpeg() {
+  try {
+    const bin = getFfmpegBinary()
+    ffmpeg.setFfmpegPath(bin)
+  } catch (err) {
+    console.warn('[FFmpeg binary path warn]:', err)
+  }
 }
 
 export interface EnhancementSettings {
@@ -59,6 +94,8 @@ export async function processMediaEnhancement(
   settings: EnhancementSettings,
   baseTitle: string
 ): Promise<EnhancedResult> {
+  ensureFfmpeg()
+
   const isAudioMode =
     mediaType === 'audio' ||
     ['mp3', 'wav', 'flac', 'aac'].includes((settings.targetFormat || '').toLowerCase())
@@ -67,6 +104,11 @@ export async function processMediaEnhancement(
   const ext = rawExt.replace(/^\./, '')
   const safeTitle = (baseTitle || 'enhanced_media').slice(0, 40).replace(/[^\w\s.-]/gi, '_')
   const fileName = `${safeTitle}.${ext}`
+
+  const tempInputPath = path.join(
+    os.tmpdir(),
+    `a2z_in_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.tmp`
+  )
   const outPath = path.join(
     os.tmpdir(),
     `a2z_enh_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`
@@ -74,17 +116,41 @@ export async function processMediaEnhancement(
 
   const cleanup = () => {
     try {
-      if (fs.existsSync(outPath)) {
-        fs.unlinkSync(outPath)
-      }
-    } catch {
-      // Ignore cleanup error
+      if (fs.existsSync(tempInputPath)) fs.unlinkSync(tempInputPath)
+    } catch {}
+    try {
+      if (fs.existsSync(outPath)) fs.unlinkSync(outPath)
+    } catch {}
+  }
+
+  // Pre-download media stream with browser headers to avoid CDN 403 Forbidden errors
+  try {
+    const streamRes = await fetch(inputUrl, {
+      headers: {
+        'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        'Accept': '*/*',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Referer': 'https://www.google.com/',
+      },
+      signal: AbortSignal.timeout(45000),
+    })
+
+    if (!streamRes.ok || !streamRes.body) {
+      throw new Error(`Failed to fetch media stream (${streamRes.status} ${streamRes.statusText})`)
     }
+
+    const fileStream = fs.createWriteStream(tempInputPath)
+    // @ts-ignore
+    await pipeline(streamRes.body, fileStream)
+  } catch (fetchErr: any) {
+    cleanup()
+    throw new Error(`Failed to download source stream: ${fetchErr?.message || fetchErr}`)
   }
 
   return new Promise<EnhancedResult>((resolve, reject) => {
     try {
-      const cmd = ffmpeg(inputUrl)
+      const cmd = ffmpeg(tempInputPath)
 
       // 1. Trimming
       if (
@@ -125,18 +191,18 @@ export async function processMediaEnhancement(
           }
         }
 
-        // Output container & compression
+        // Output container & compression (using ultrafast presets for serverless responsiveness)
         if (ext === 'gif') {
           cmd.outputOptions([
             '-vf',
-            'fps=12,scale=480:-1:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse',
+            'fps=10,scale=480:-1:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse',
           ])
         } else if (ext === 'webm') {
           const crfVal = settings.compressionLevel === 'small' ? '36' : '30'
-          cmd.outputOptions(['-c:v', 'libvpx-vp9', '-b:v', '0', '-crf', crfVal])
+          cmd.outputOptions(['-c:v', 'libvpx-vp9', '-b:v', '0', '-crf', crfVal, '-deadline', 'realtime'])
         } else if (ext === 'mkv') {
           const crfVal = settings.compressionLevel === 'small' ? '28' : '23'
-          cmd.outputOptions(['-c:v', 'libx264', '-preset', 'veryfast', '-crf', crfVal])
+          cmd.outputOptions(['-c:v', 'libx264', '-preset', 'ultrafast', '-crf', crfVal])
         } else {
           // Default MP4
           if (settings.compressionLevel === 'small') {
@@ -144,35 +210,40 @@ export async function processMediaEnhancement(
               '-c:v',
               'libx264',
               '-preset',
-              'veryfast',
+              'ultrafast',
               '-crf',
               '28',
               '-vf',
               "scale='min(1280,iw)':-2",
             ])
           } else if (settings.compressionLevel === 'balanced') {
-            cmd.outputOptions(['-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23'])
+            cmd.outputOptions(['-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '23'])
           } else {
             // Original / High fidelity
-            cmd.outputOptions(['-c:v', 'libx264', '-preset', 'fast', '-crf', '18'])
+            cmd.outputOptions(['-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20'])
           }
         }
       }
 
-      // Execution timeout guard (90 seconds)
+      // Execution timeout guard (60 seconds)
       const timeoutTimer = setTimeout(() => {
         try {
           (cmd as any).kill('SIGKILL')
         } catch {}
         cleanup()
-        reject(new Error('Media enhancement timed out. Please try a shorter duration or balanced profile.'))
-      }, 90000)
+        reject(new Error('Media enhancement timed out. Please try a shorter clip or balanced profile.'))
+      }, 60000)
 
       cmd
         .output(outPath)
         .on('end', () => {
           clearTimeout(timeoutTimer)
+          try {
+            if (fs.existsSync(tempInputPath)) fs.unlinkSync(tempInputPath)
+          } catch {}
+
           if (!fs.existsSync(outPath)) {
+            cleanup()
             return reject(new Error('Enhancement output file was not created.'))
           }
           resolve({
