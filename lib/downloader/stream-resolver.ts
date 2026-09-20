@@ -687,11 +687,11 @@ export async function resolveYouTube(url: string): Promise<StreamResult | null> 
             uploader: 'YouTube Creator',
             platform: 'YouTube',
             qualities,
-            formats: videoFormats.map((f: any) => ({
+            formats: [...videoFormats, ...audioFormats].map((f: any) => ({
               quality: f.quality,
-              label: f.label || (f.quality ? `${f.quality}p` : 'MP4'),
+              label: f.label || (f.type === 'audio' ? 'Audio MP3' : f.quality ? `${f.quality}p` : 'MP4'),
               url: f.url,
-              type: f.type,
+              type: f.type || 'video',
             })),
             streamUrl: bestVideo?.url || bestAudio?.url,
             downloadUrl: bestVideo?.url || bestAudio?.url,

@@ -108,13 +108,14 @@ export default function MediaCard({
 
     let targetUrl = media.downloadUrl
     if (activeTab === 'audio') {
-      targetUrl = media.audioUrl || media.downloadUrl
+      const audioFormat = media.formats?.find(f => f.type === 'audio' || (f.label && f.label.toLowerCase().includes('mp3')))
+      targetUrl = audioFormat?.url || media.audioUrl || media.downloadUrl
     } else if (activeTab === 'image' || media.fileType === 'image') {
       targetUrl = media.downloadUrl || media.thumbnail
     } else if (media.formats && media.formats.length > 0) {
       const cleanQ = selectedQuality.replace(/[^\d]/g, '')
       const match = media.formats.find(
-        f => f.label === selectedQuality || (f.quality && cleanQ && String(f.quality) === cleanQ)
+        f => (f.type !== 'audio') && (f.label === selectedQuality || (f.quality && cleanQ && String(f.quality) === cleanQ))
       )
       if (match?.url) {
         targetUrl = match.url

@@ -18,12 +18,21 @@ export async function POST(req: NextRequest) {
     }
 
     let targetDownloadUrl = providedDownloadUrl
+    const isAudio = mediaType === 'audio' || quality === 'Audio Only' || quality === 'mp3'
 
-    // If downloadUrl not passed from client, resolve dynamically
-    if (!targetDownloadUrl && url) {
+    // If mediaType is audio, ensure targetDownloadUrl resolves to the actual audio stream
+    if (isAudio && url) {
+      if (!targetDownloadUrl || (!targetDownloadUrl.includes('.mp3') && !targetDownloadUrl.includes('audio') && !targetDownloadUrl.includes('128'))) {
+        try {
+          const resolved = await resolveMediaUrl(url)
+          if (resolved.audioUrl) {
+            targetDownloadUrl = resolved.audioUrl
+          }
+        } catch {}
+      }
+    } else if (!targetDownloadUrl && url) {
       const resolved = await resolveMediaUrl(url)
-      targetDownloadUrl =
-        mediaType === 'audio' && resolved.audioUrl ? resolved.audioUrl : resolved.downloadUrl
+      targetDownloadUrl = resolved.downloadUrl
     }
 
     if (!targetDownloadUrl) {
@@ -109,18 +118,19 @@ export async function POST(req: NextRequest) {
     }
 
     const cleanTitle = (title || 'download').slice(0, 40).replace(/[^\w\s.-]/gi, '_')
-    const isAudio = mediaType === 'audio' || quality === 'Audio Only' || quality === 'mp3'
     const ext = isAudio ? 'mp3' : 'mp4'
     const cleanFileName = `${cleanTitle}.${ext}`
 
-    // Direct high-speed CDN URLs (SaveTube Cloudflare, TikWM, ShareBox CDN, etc.) are delivered directly to the client
-    // This avoids Vercel Serverless Function 4.5MB body limits and 10s execution timeouts
+    // Audio streams (~3-10MB) are streamed through serverless proxy as blobs for 100% reliable instant saves.
+    // Video direct high-speed CDN URLs (SaveTube Cloudflare, TikWM, ShareBox CDN, etc.) are delivered directly to the client
     const isDirectCdn =
-      targetDownloadUrl.includes('savetube') ||
-      targetDownloadUrl.includes('tikwm') ||
-      targetDownloadUrl.includes('fxtwitter') ||
-      targetDownloadUrl.includes('pbcshsnp.com') ||
-      targetDownloadUrl.includes('cshsnpcwio')
+      !isAudio && (
+        targetDownloadUrl.includes('savetube') ||
+        targetDownloadUrl.includes('tikwm') ||
+        targetDownloadUrl.includes('fxtwitter') ||
+        targetDownloadUrl.includes('pbcshsnp.com') ||
+        targetDownloadUrl.includes('cshsnpcwio')
+      )
 
     if (isDirectCdn) {
       return NextResponse.json({ redirectUrl: targetDownloadUrl, filename: cleanFileName })

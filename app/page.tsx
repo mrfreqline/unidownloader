@@ -11,6 +11,7 @@ import { supabase } from '@/lib/supabase'
 import MagicProgressBar from '@/components/MagicProgressBar'
 import FolderExplorer from '@/components/FolderExplorer'
 import AdBanner from '@/components/AdBanner'
+import InSiteAdPopup from '@/components/InSiteAdPopup'
 import SeoContent from '@/components/SeoContent'
 import { FolderResult } from '@/lib/downloader/terabox-resolver'
 import {
@@ -457,7 +458,8 @@ export default function Home() {
     setDownloadSuccessMsg(null)
 
     try {
-      let endpoint = '/api/download'
+      const origin = typeof window !== 'undefined' ? window.location.origin : ''
+      let endpoint = `${origin}/api/download`
       let payload: any = {
         url: analyzedMedia.originalUrl,
         quality: format,
@@ -468,7 +470,7 @@ export default function Home() {
       }
 
       if (mediaType === 'image') {
-        endpoint = '/api/thumbnail'
+        endpoint = `${origin}/api/thumbnail`
         payload = {
           thumbnailUrl: downloadUrl || analyzedMedia.downloadUrl || analyzedMedia.thumbnail,
           title: analyzedMedia.title,
@@ -548,24 +550,35 @@ export default function Home() {
           const filename = data.filename || defaultFilename
           setDirectDownloadLink({ url: data.redirectUrl, filename })
 
-          // Trigger native browser download directly into Downloads folder without popup blockers
+          // Trigger native browser download directly into Downloads folder without popup blockers or window navigation locks
           try {
+            let dlFrame = document.getElementById('a2z-download-frame') as HTMLIFrameElement
+            if (!dlFrame) {
+              dlFrame = document.createElement('iframe')
+              dlFrame.id = 'a2z-download-frame'
+              dlFrame.name = 'a2z-download-frame'
+              dlFrame.style.display = 'none'
+              document.body.appendChild(dlFrame)
+            }
+            const a = document.createElement('a')
+            a.href = data.redirectUrl
+            a.download = filename
+            a.target = 'a2z-download-frame'
+            document.body.appendChild(a)
+            a.click()
+            setTimeout(() => {
+              try { document.body.removeChild(a) } catch {}
+            }, 500)
+          } catch {
             const a = document.createElement('a')
             a.href = data.redirectUrl
             a.download = filename
             document.body.appendChild(a)
             a.click()
-            document.body.removeChild(a)
-          } catch {}
-
-          // Direct browser navigation trigger
-          // When a remote CDN provides Content-Disposition: attachment, window.location.href
-          // prompts the browser's download manager directly without unloading the current page.
-          setTimeout(() => {
-            try {
-              window.location.href = data.redirectUrl
-            } catch {}
-          }, 100)
+            setTimeout(() => {
+              try { document.body.removeChild(a) } catch {}
+            }, 500)
+          }
 
           if (mediaType === 'video') {
             if (!isLoggedIn && guestTrials > 0 && !format.includes('4K')) {
@@ -628,6 +641,9 @@ export default function Home() {
         theme={theme}
         onThemeChange={applyTheme}
       />
+
+      {/* Small 5-second in-site crossable sponsor popup (no redirect) */}
+      <InSiteAdPopup />
 
       {/* Main Container: Optimized padding for mobile screens */}
       <main className="flex-1 max-w-4xl w-full mx-auto px-3.5 sm:px-6 py-6 sm:py-10 space-y-6 sm:space-y-8">
