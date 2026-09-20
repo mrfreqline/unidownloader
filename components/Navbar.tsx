@@ -1,12 +1,13 @@
 'use client'
 
 import Link from 'next/link'
-import { Download, Coins, Sun, Moon, Monitor, User, LogOut, Plus } from 'lucide-react'
+import { Download, Coins, Sun, Moon, Monitor, User, LogOut, Plus, Smartphone } from 'lucide-react'
 
 interface NavbarProps {
   tokens: number
   onOpenTokenModal: () => void
   onOpenAuthModal: () => void
+  onOpenAppModal?: () => void
   isLoggedIn: boolean
   userEmail?: string
   onLogout?: () => void
@@ -18,6 +19,7 @@ export default function Navbar({
   tokens,
   onOpenTokenModal,
   onOpenAuthModal,
+  onOpenAppModal,
   isLoggedIn,
   userEmail,
   onLogout,
@@ -74,6 +76,18 @@ export default function Navbar({
               <Plus className="w-2.5 h-2.5" />
             </span>
           </button>
+
+          {/* Install / Download App Button */}
+          {onOpenAppModal && (
+            <button
+              onClick={onOpenAppModal}
+              className="inline-flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-1.5 rounded-lg text-xs font-medium bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 transition text-emerald-600 dark:text-emerald-400 touch-manipulation cursor-pointer"
+              title="Get Windows .exe or Phone APK"
+            >
+              <Smartphone className="w-3.5 h-3.5 shrink-0" />
+              <span className="hidden xs:inline font-semibold">App</span>
+            </button>
+          )}
 
           {/* Theme Selector: Compact segmented toggle */}
           <div className="flex items-center p-0.5 sm:p-1 rounded-lg bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-500">

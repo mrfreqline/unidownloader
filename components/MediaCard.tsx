@@ -15,8 +15,11 @@ import {
   Play,
   Tv,
   HardDrive,
+  QrCode,
+  Smartphone,
 } from 'lucide-react'
 import MediaEnhancer, { EnhancementSettings } from './MediaEnhancer'
+import QrModal from './QrModal'
 
 export interface AnalyzedMedia {
   title: string
@@ -35,6 +38,7 @@ export interface AnalyzedMedia {
   isDirectMovie?: boolean
   fileSize?: string
   formats?: Array<{ quality?: string | number; label?: string; url: string; type?: string }>
+  images?: Array<{ url: string; thumbnail?: string; title?: string }>
 }
 
 interface MediaCardProps {
@@ -65,6 +69,7 @@ export default function MediaCard({
 }: MediaCardProps) {
   const defaultTab = media.isDirectMovie ? 'watch' : media.fileType || 'video'
   const [activeTab, setActiveTab] = useState<'video' | 'audio' | 'image' | 'watch'>(defaultTab)
+  const [isQrOpen, setIsQrOpen] = useState(false)
 
   const availableQualities =
     media.qualities && media.qualities.length > 0
@@ -105,6 +110,15 @@ export default function MediaCard({
   const handleDownloadClick = () => {
     const downloadType =
       activeTab === 'audio' ? 'audio' : activeTab === 'image' || media.fileType === 'image' ? 'image' : 'video'
+
+    if (activeTab === 'image' && media.images && media.images.length > 1) {
+      media.images.forEach((img, i) => {
+        setTimeout(() => {
+          onDownload('original', 'image', enhancement, img.url)
+        }, i * 350)
+      })
+      return
+    }
 
     let targetUrl = media.downloadUrl
     if (activeTab === 'audio') {
@@ -207,6 +221,15 @@ export default function MediaCard({
                 Watchable in Browser
               </span>
             )}
+            <button
+              type="button"
+              onClick={() => setIsQrOpen(true)}
+              className="px-2.5 py-0.5 rounded-full text-[10px] font-mono bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 flex items-center gap-1 transition cursor-pointer"
+              title="Scan QR code to open & download on your phone"
+            >
+              <QrCode className="w-3 h-3 text-emerald-500" />
+              <span>Send to Phone</span>
+            </button>
           </div>
         </div>
       </div>
@@ -269,7 +292,7 @@ export default function MediaCard({
           </button>
         )}
 
-        {(media.thumbnail || media.fileType === 'image') && (
+        {(media.thumbnail || media.fileType === 'image' || (media.images && media.images.length > 0)) && (
           <button
             type="button"
             onClick={() => setActiveTab('image')}
@@ -280,8 +303,20 @@ export default function MediaCard({
             }`}
           >
             <ImageIcon className="w-3.5 h-3.5 shrink-0" />
-            <span className="sm:hidden">{media.fileType === 'image' ? 'Image' : 'Cover'}</span>
-            <span className="hidden sm:inline">{media.fileType === 'image' ? 'Image (HD)' : 'Cover Image'}</span>
+            <span className="sm:hidden">
+              {media.images && media.images.length > 1
+                ? `Images (${media.images.length})`
+                : media.fileType === 'image'
+                ? 'Image'
+                : 'Cover'}
+            </span>
+            <span className="hidden sm:inline">
+              {media.images && media.images.length > 1
+                ? `All Images (${media.images.length})`
+                : media.fileType === 'image'
+                ? 'Image (HD)'
+                : 'Cover Image'}
+            </span>
             <span className="text-[9px] sm:text-[10px] font-mono px-1 rounded-xs bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 font-bold">
               FREE
             </span>
@@ -383,11 +418,72 @@ export default function MediaCard({
         </div>
       )}
 
-      {activeTab === 'image' && media.thumbnail && (
+      {activeTab === 'image' && media.images && media.images.length > 1 ? (
+        <div className="space-y-3 animate-in fade-in-50 duration-200">
+          <div className="p-3 sm:p-3.5 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/40 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+            <div>
+              <span className="font-semibold text-zinc-900 dark:text-zinc-100 block">
+                Gallery Album ({media.images.length} High-Res Photos)
+              </span>
+              <span className="text-zinc-500 text-[10px] sm:text-[11px]">
+                Original resolution pictures • Click any image to download individually or download all below
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                media.images?.forEach((img, i) => {
+                  setTimeout(() => {
+                    onDownload('original', 'image', enhancement, img.url)
+                  }, i * 350)
+                })
+              }}
+              className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs transition flex items-center justify-center gap-1.5 shrink-0 shadow-xs cursor-pointer touch-manipulation"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>Download All ({media.images.length})</span>
+            </button>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2.5 max-h-96 overflow-y-auto p-1">
+            {media.images.map((img, idx) => (
+              <div
+                key={idx}
+                className="group relative rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 overflow-hidden shadow-xs hover:shadow-md transition flex flex-col"
+              >
+                <div className="relative aspect-square w-full bg-zinc-100 dark:bg-zinc-800 overflow-hidden">
+                  <img
+                    src={img.thumbnail || img.url}
+                    alt={img.title || `Photo ${idx + 1}`}
+                    className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
+                    loading="lazy"
+                  />
+                  <span className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded-md bg-black/70 backdrop-blur-xs text-white text-[10px] font-mono font-bold">
+                    #{idx + 1}
+                  </span>
+                </div>
+                <div className="p-2 flex items-center justify-between gap-1 bg-white dark:bg-zinc-900 border-t border-zinc-100 dark:border-zinc-800">
+                  <span className="text-[11px] font-medium text-zinc-700 dark:text-zinc-300 truncate">
+                    Photo {idx + 1}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => onDownload('original', 'image', enhancement, img.url)}
+                    className="p-1.5 rounded-md bg-zinc-100 dark:bg-zinc-800 hover:bg-emerald-500 hover:text-white text-zinc-700 dark:text-zinc-300 transition cursor-pointer shrink-0"
+                    title={`Download Photo ${idx + 1}`}
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : activeTab === 'image' && (media.thumbnail || media.downloadUrl) ? (
         <div className="p-3 sm:p-3.5 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/40 text-xs flex items-center justify-between gap-2">
           <div>
             <span className="font-semibold text-zinc-900 dark:text-zinc-100 block">
-              High Resolution Cover Image
+              High Resolution Image
             </span>
             <span className="text-zinc-500 text-[10px] sm:text-[11px]">
               Original source picture • Unlimited downloads
@@ -397,7 +493,7 @@ export default function MediaCard({
             0 Tokens
           </span>
         </div>
-      )}
+      ) : null}
 
       {/* Optional Media Enhancement Studio */}
       <MediaEnhancer
@@ -425,7 +521,9 @@ export default function MediaCard({
               <span>
                 Download{' '}
                 {activeTab === 'image' || media.fileType === 'image'
-                  ? 'High-Res Image'
+                  ? media.images && media.images.length > 1
+                    ? `All ${media.images.length} High-Res Images`
+                    : 'High-Res Image'
                   : activeTab === 'video' || activeTab === 'watch'
                   ? media.isDirectMovie
                     ? 'Movie File'
@@ -446,6 +544,14 @@ export default function MediaCard({
           <span>Zero retention • Ephemeral stream</span>
         </div>
       </div>
+
+      {/* QR Code Send to Phone Modal */}
+      <QrModal
+        isOpen={isQrOpen}
+        onClose={() => setIsQrOpen(false)}
+        url={media.originalUrl}
+        title={media.title}
+      />
     </div>
   )
 }

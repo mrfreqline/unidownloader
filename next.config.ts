@@ -6,6 +6,7 @@ const nextConfig: NextConfig = {
     '/api/**/*': ['./node_modules/ffmpeg-static/**/*'],
   },
   experimental: {
+    cpus: 4,
     serverActions: {
       bodySizeLimit: '500mb',
     },

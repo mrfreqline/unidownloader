@@ -35,6 +35,7 @@ export async function POST(req: NextRequest) {
       folderData: result.folderData,
       fileType: result.fileType || 'video',
       formats: result.formats,
+      images: result.images,
     })
 
   } catch (err: any) {

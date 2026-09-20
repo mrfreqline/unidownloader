@@ -22,6 +22,7 @@ export interface StreamResult {
   fileType?: 'video' | 'audio' | 'image'
   isImage?: boolean
   formats?: Array<{ quality?: string | number; label?: string; url: string; type?: string }>
+  images?: Array<{ url: string; thumbnail?: string; title?: string }>
 }
 
 // Clean escaped HTML / unicode characters in scraped URLs
@@ -230,6 +231,28 @@ export async function resolveTikTok(url: string): Promise<StreamResult | null> {
     const data = await res.json()
     if (data.code === 0 && data.data) {
       const item = data.data
+
+      // TikTok Photo Slide / Photo Mode Post
+      if (item.images && Array.isArray(item.images) && item.images.length > 0) {
+        const slideImages = item.images.map((img: string, idx: number) => ({
+          url: img,
+          thumbnail: img,
+          title: `Slide ${idx + 1}`,
+        }))
+        return {
+          title: item.title || `TikTok Photo Slide (${item.images.length} Photos)`,
+          thumbnail: item.cover || item.images[0],
+          uploader: item.author?.nickname || item.author?.unique_id || 'TikTok Creator',
+          platform: 'TikTok',
+          qualities: ['HD Original Photos', 'Standard JPEG', 'Audio MP3'],
+          streamUrl: item.images[0],
+          downloadUrl: item.images[0],
+          audioUrl: item.music || item.music_info?.play,
+          fileType: 'image',
+          images: slideImages,
+        }
+      }
+
       const downloadUrl = item.play || item.hdplay || item.wmplay
       return {
         title: item.title || 'TikTok Video (No Watermark)',
@@ -372,15 +395,23 @@ export async function resolveInstagram(url: string): Promise<StreamResult | null
       const igRes = await ruhend.igdl(cleanUrl)
       if (Array.isArray(igRes) && igRes.length > 0 && typeof igRes[0] === 'string' && igRes[0].startsWith('http')) {
         const videoUrl = igRes[0]
+        const isImage = !videoUrl.includes('.mp4')
+        const items = igRes.filter((u: any) => typeof u === 'string' && u.startsWith('http')).map((u: string, idx: number) => ({
+          url: u,
+          thumbnail: u,
+          title: `Item ${idx + 1}`
+        }))
         return {
-          title: `Instagram Reel (${shortcode || 'Video'})`,
+          title: isImage ? `Instagram Photo (${shortcode || 'Post'})` : `Instagram Reel (${shortcode || 'Video'})`,
           platform: 'Instagram',
-          thumbnail: '',
+          thumbnail: igRes[0],
           uploader: 'Instagram Creator',
-          qualities: ['1080p Full HD', '720p HD', 'Audio MP3'],
+          qualities: isImage ? ['High Resolution Image', 'Standard JPEG'] : ['1080p Full HD', '720p HD', 'Audio MP3'],
           streamUrl: videoUrl,
           downloadUrl: videoUrl,
-          audioUrl: videoUrl,
+          audioUrl: isImage ? undefined : videoUrl,
+          fileType: isImage ? 'image' : 'video',
+          images: items.length > 1 ? items : undefined,
         }
       }
     }
@@ -395,18 +426,26 @@ export async function resolveInstagram(url: string): Promise<StreamResult | null
     if (typeof ruhend?.igdl2 === 'function') {
       const igRes2 = await ruhend.igdl2(cleanUrl)
       if (igRes2?.status && Array.isArray(igRes2?.data) && igRes2.data.length > 0) {
-        const item = igRes2.data[0]
-        const videoUrl = item.url
-        if (videoUrl) {
+        const items = igRes2.data.filter((it: any) => it?.url && typeof it.url === 'string' && it.url.startsWith('http'))
+        if (items.length > 0) {
+          const first = items[0]
+          const isVideo = items.some((it: any) => it.url && it.url.includes('.mp4'))
+          const gallery = items.map((it: any, idx: number) => ({
+            url: it.url,
+            thumbnail: it.thumbnail || it.url,
+            title: `Item ${idx + 1}`
+          }))
           return {
-            title: `Instagram Reel (${shortcode || 'Video'})`,
+            title: isVideo ? `Instagram Video (${shortcode || 'Reel'})` : `Instagram Photo (${shortcode || 'Post'})`,
             platform: 'Instagram',
-            thumbnail: item.thumbnail || '',
+            thumbnail: first.thumbnail || first.url,
             uploader: 'Instagram Creator',
-            qualities: ['1080p Full HD', '720p HD', 'Audio MP3'],
-            streamUrl: videoUrl,
-            downloadUrl: videoUrl,
-            audioUrl: videoUrl,
+            qualities: isVideo ? ['1080p Full HD', '720p HD', 'Audio MP3'] : ['High Resolution Image', 'Standard JPEG'],
+            streamUrl: first.url,
+            downloadUrl: first.url,
+            audioUrl: isVideo ? first.url : undefined,
+            fileType: isVideo ? 'video' : 'image',
+            images: gallery.length > 1 ? gallery : undefined,
           }
         }
       }
@@ -422,18 +461,26 @@ export async function resolveInstagram(url: string): Promise<StreamResult | null
     if (typeof btch?.igdl === 'function') {
       const btchRes = await btch.igdl(cleanUrl)
       if (btchRes?.status && Array.isArray(btchRes?.result) && btchRes.result.length > 0) {
-        const item = btchRes.result[0]
-        const videoUrl = item.url
-        if (videoUrl) {
+        const items = btchRes.result.filter((it: any) => it?.url && typeof it.url === 'string' && it.url.startsWith('http'))
+        if (items.length > 0) {
+          const first = items[0]
+          const isVideo = items.some((it: any) => it.url && it.url.includes('.mp4'))
+          const gallery = items.map((it: any, idx: number) => ({
+            url: it.url,
+            thumbnail: it.thumbnail || it.url,
+            title: `Item ${idx + 1}`
+          }))
           return {
-            title: `Instagram Video (${shortcode || 'Reel'})`,
+            title: isVideo ? `Instagram Video (${shortcode || 'Reel'})` : `Instagram Photo (${shortcode || 'Post'})`,
             platform: 'Instagram',
-            thumbnail: item.thumbnail || '',
+            thumbnail: first.thumbnail || first.url,
             uploader: 'Instagram Creator',
-            qualities: ['1080p Full HD', '720p HD', 'Audio MP3'],
-            streamUrl: videoUrl,
-            downloadUrl: videoUrl,
-            audioUrl: videoUrl,
+            qualities: isVideo ? ['1080p Full HD', '720p HD', 'Audio MP3'] : ['High Resolution Image', 'Standard JPEG'],
+            streamUrl: first.url,
+            downloadUrl: first.url,
+            audioUrl: isVideo ? first.url : undefined,
+            fileType: isVideo ? 'video' : 'image',
+            images: gallery.length > 1 ? gallery : undefined,
           }
         }
       }
@@ -450,16 +497,40 @@ export async function resolveInstagram(url: string): Promise<StreamResult | null
         if (err || !stdout) return resolve(null)
         try {
           const d = JSON.parse(stdout)
-          if (d.url) {
+          if (d.entries && Array.isArray(d.entries) && d.entries.length > 0) {
+            const gallery = d.entries.map((e: any, idx: number) => ({
+              url: e.url || (e.formats && e.formats[e.formats.length - 1]?.url) || e.thumbnail,
+              thumbnail: e.thumbnail || e.url,
+              title: e.title || `Item ${idx + 1}`,
+            }))
+            const first = gallery[0]
+            const isVid = d.entries.some((e: any) => e.vcodec && e.vcodec !== 'none')
             resolve({
-              title: d.title || `Instagram Video (${shortcode || 'Reel'})`,
+              title: `${d.title || 'Instagram Post'} (${gallery.length} Items)`,
+              platform: 'Instagram',
+              thumbnail: first.thumbnail,
+              uploader: d.uploader || 'Instagram Creator',
+              qualities: isVid ? ['1080p Full HD', '720p HD', 'Audio MP3'] : ['High Resolution Image', 'Standard JPEG'],
+              streamUrl: first.url,
+              downloadUrl: first.url,
+              audioUrl: isVid ? first.url : undefined,
+              fileType: isVid ? 'video' : 'image',
+              images: gallery,
+            })
+            return
+          }
+          if (d.url) {
+            const isVid = d.vcodec && d.vcodec !== 'none'
+            resolve({
+              title: d.title || `Instagram ${isVid ? 'Video' : 'Photo'} (${shortcode || 'Post'})`,
               platform: 'Instagram',
               thumbnail: d.thumbnail || '',
               uploader: d.uploader || 'Instagram Creator',
-              qualities: ['1080p Full HD', '720p HD', 'Audio MP3'],
+              qualities: isVid ? ['1080p Full HD', '720p HD', 'Audio MP3'] : ['High Resolution Image', 'Standard JPEG'],
               streamUrl: d.url,
               downloadUrl: d.url,
-              audioUrl: d.url,
+              audioUrl: isVid ? d.url : undefined,
+              fileType: isVid ? 'video' : 'image',
             })
           } else {
             resolve(null)
@@ -925,6 +996,25 @@ export async function resolveTwitter(url: string): Promise<StreamResult | null> 
             downloadUrl: video.url,
           }
         }
+
+        if (tweet?.media?.photos && tweet.media.photos.length > 0) {
+          const photoItems = tweet.media.photos.map((p: any, idx: number) => ({
+            url: p.url,
+            thumbnail: p.url,
+            title: `Photo ${idx + 1}`,
+          }))
+          return {
+            title: tweet.text ? tweet.text.slice(0, 60) : `Twitter Photo (${tweetId})`,
+            platform: 'Twitter / X',
+            thumbnail: tweet.media.photos[0].url,
+            uploader: tweet.author?.name || tweet.author?.screen_name || 'X User',
+            qualities: ['High Resolution Photo', 'Standard JPEG'],
+            streamUrl: tweet.media.photos[0].url,
+            downloadUrl: tweet.media.photos[0].url,
+            fileType: 'image',
+            images: photoItems,
+          }
+        }
       }
     } catch (err) {
       console.warn('[Twitter FxTwitter Warn]:', err)
@@ -1122,10 +1212,11 @@ export async function resolveTwitch(url: string): Promise<StreamResult | null> {
   return null
 }
 
-// 8. Reddit Dedicated Resolver
+// 8. Reddit Dedicated Resolver (Videos, Images & Multi-Image Galleries)
 export async function resolveReddit(url: string): Promise<StreamResult | null> {
   try {
-    const urlObj = new URL(url)
+    const cleanUrl = url.split('?')[0].replace(/\/$/, '')
+    const urlObj = new URL(cleanUrl)
     const pathname = urlObj.pathname
 
     // Engine A: vxreddit crawler proxy
@@ -1146,15 +1237,35 @@ export async function resolveReddit(url: string): Promise<StreamResult | null> {
         const titleMatch = html.match(/<meta\s+(?:property|name)=["']og:title["']\s+content=["']([^"']+)["']/i)
         const thumbMatch = html.match(/<meta\s+(?:property|name)=["']og:image["']\s+content=["']([^"']+)["']/i)
 
+        const title = titleMatch ? titleMatch[1].slice(0, 70) : 'Reddit Media'
+
         if (videoMatch && videoMatch[1]) {
           const videoUrl = videoMatch[1].replace(/&amp;/g, '&')
           return {
-            title: titleMatch ? titleMatch[1].slice(0, 70) : 'Reddit Video',
+            title,
             thumbnail: thumbMatch ? thumbMatch[1].replace(/&amp;/g, '&') : '',
             downloadUrl: videoUrl,
             streamUrl: videoUrl,
             platform: 'Reddit',
             qualities: ['HD Video', 'Standard Video', 'Audio MP3'],
+            fileType: 'video',
+          }
+        }
+
+        // Reddit image post from vxreddit
+        if (thumbMatch && thumbMatch[1] && !videoMatch) {
+          const imgUrl = thumbMatch[1].replace(/&amp;/g, '&')
+          if (imgUrl.startsWith('http') && !imgUrl.includes('redditstatic.com')) {
+            return {
+              title,
+              thumbnail: imgUrl,
+              downloadUrl: imgUrl,
+              streamUrl: imgUrl,
+              platform: 'Reddit',
+              qualities: ['Original Resolution Image', 'Standard JPEG'],
+              fileType: 'image',
+              images: [{ url: imgUrl, thumbnail: imgUrl, title }],
+            }
           }
         }
       }
@@ -1162,9 +1273,9 @@ export async function resolveReddit(url: string): Promise<StreamResult | null> {
       console.warn('[Reddit vxreddit warn]:', e)
     }
 
-    // Engine B: RapidSave proxy inspection
+    // Engine B: RapidSave proxy inspection (best for Reddit videos with audio)
     try {
-      const rsUrl = `https://rapidsave.com/info?url=${encodeURIComponent(url)}`
+      const rsUrl = `https://rapidsave.com/info?url=${encodeURIComponent(cleanUrl)}`
       const rsRes = await fetch(rsUrl, {
         headers: {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
@@ -1186,16 +1297,243 @@ export async function resolveReddit(url: string): Promise<StreamResult | null> {
             downloadUrl: dlBtn[1],
             streamUrl: dlBtn[1],
             platform: 'Reddit',
-            qualities: ['HD Video', 'Audio MP3'],
+            qualities: ['HD Video (Merged Audio)', 'Audio MP3'],
+            fileType: 'video',
           }
         }
       }
     } catch (e) {
       console.warn('[Reddit RapidSave warn]:', e)
     }
+
+    // Engine C: yt-dlp (supports Reddit videos with audio and photo galleries)
+    try {
+      const { exec } = await import('child_process')
+      const p = new Promise<StreamResult | null>((resolve) => {
+        exec(
+          `python -m yt_dlp --dump-json --no-warnings "${cleanUrl}"`,
+          { maxBuffer: 10 * 1024 * 1024, timeout: 12000 },
+          (err, stdout) => {
+            if (err || !stdout) return resolve(null)
+            try {
+              const d = JSON.parse(stdout)
+              const title = d.title ? d.title.slice(0, 70) : 'Reddit Media'
+              if (d.entries && Array.isArray(d.entries) && d.entries.length > 0) {
+                const images = d.entries.map((e: any, idx: number) => ({
+                  url: e.url || e.thumbnail,
+                  thumbnail: e.thumbnail || e.url,
+                  title: e.title || `Image ${idx + 1}`,
+                }))
+                return resolve({
+                  title: `${title} (${images.length} Images)`,
+                  thumbnail: images[0].thumbnail,
+                  downloadUrl: images[0].url,
+                  streamUrl: images[0].url,
+                  platform: 'Reddit',
+                  qualities: ['Original Resolution', 'Standard JPEG'],
+                  fileType: 'image',
+                  images,
+                })
+              }
+
+              const dlUrl = d.url || (d.formats && d.formats[d.formats.length - 1]?.url)
+              if (dlUrl) {
+                const isVid = d.vcodec && d.vcodec !== 'none' && !dlUrl.match(/\.(?:jpg|png|webp)/i)
+                resolve({
+                  title,
+                  thumbnail: d.thumbnail || dlUrl,
+                  downloadUrl: dlUrl,
+                  streamUrl: dlUrl,
+                  platform: 'Reddit',
+                  qualities: isVid ? ['HD Video', 'Audio MP3'] : ['Original Resolution'],
+                  fileType: isVid ? 'video' : 'image',
+                  images: !isVid ? [{ url: dlUrl, thumbnail: dlUrl, title }] : undefined,
+                })
+              } else {
+                resolve(null)
+              }
+            } catch {
+              resolve(null)
+            }
+          }
+        )
+      })
+      const ytDlpRes = await p
+      if (ytDlpRes) return ytDlpRes
+    } catch (err) {
+      console.warn('[Reddit yt-dlp warn]:', err)
+    }
   } catch (err) {
     console.warn('[Reddit Resolver Error]:', err)
   }
+  return null
+}
+
+// 8b. Pinterest Dedicated Resolver (Pins, Shortlinks, Videos & Full-Res Images)
+export async function resolvePinterest(url: string): Promise<StreamResult | null> {
+  let targetUrl = url.trim()
+
+  // Follow redirect for shortlinks like pin.it/xyz
+  if (targetUrl.includes('pin.it/')) {
+    try {
+      const headRes = await fetch(targetUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        },
+        redirect: 'follow',
+        signal: AbortSignal.timeout(8000),
+      })
+      if (headRes.ok && headRes.url) {
+        targetUrl = headRes.url
+      }
+    } catch (e) {
+      console.warn('[Pinterest redirect warn]:', e)
+    }
+  }
+
+  // Engine A: Native Pinterest HTML & JSON-LD Scraper
+  try {
+    const res = await fetch(targetUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9',
+      },
+      signal: AbortSignal.timeout(10000),
+    })
+
+    if (res.ok) {
+      const html = await res.text()
+
+      // Check for video stream
+      const ogVideo =
+        html.match(/<meta\s+property=["']og:video(?::secure_url)?["']\s+content=["']([^"']+)["']/i) ||
+        html.match(/["'](https?:\/\/v\.pinimg\.com\/videos\/[^"']+\.mp4)["']/i) ||
+        html.match(/["'](https?:\/\/v\.pinimg\.com\/[^"']+\.m3u8)["']/i)
+
+      // Check for image
+      const ogImage =
+        html.match(/<meta\s+property=["']og:image["']\s+content=["']([^"']+)["']/i) ||
+        html.match(/["'](https?:\/\/i\.pinimg\.com\/(?:originals|\d+x)\/[^"']+)["']/i)
+
+      // Title & uploader
+      const ogTitle =
+        html.match(/<meta\s+property=["']og:title["']\s+content=["']([^"']+)["']/i) ||
+        html.match(/<title>([^<]+)<\/title>/i)
+      const cleanTitle = ogTitle ? ogTitle[1].replace(/ \| Pinterest$/i, '').trim().slice(0, 70) : 'Pinterest Pin'
+
+      // JSON-LD structured data
+      const jsonLdMatch = html.match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/)
+      let jsonLd: any = null
+      if (jsonLdMatch) {
+        try {
+          jsonLd = JSON.parse(jsonLdMatch[1])
+        } catch {}
+      }
+
+      // If video pin
+      const videoUrl = ogVideo ? ogVideo[1].replace(/&amp;/g, '&') : jsonLd?.contentUrl?.includes('.mp4') ? jsonLd.contentUrl : null
+      if (videoUrl && videoUrl.startsWith('http')) {
+        const thumbUrl = ogImage ? ogImage[1].replace(/&amp;/g, '&') : ''
+        return {
+          title: cleanTitle || 'Pinterest Video',
+          thumbnail: thumbUrl,
+          platform: 'Pinterest',
+          qualities: ['1080p / 720p HD MP4', 'Standard Quality', 'Audio MP3'],
+          streamUrl: videoUrl,
+          downloadUrl: videoUrl,
+          fileType: 'video',
+          audioUrl: videoUrl,
+        }
+      }
+
+      // If image pin
+      let rawImg = ogImage ? ogImage[1].replace(/&amp;/g, '&') : jsonLd?.image || jsonLd?.contentUrl
+      if (rawImg && rawImg.startsWith('http')) {
+        // Upgrade to master original resolution
+        const originalImg = rawImg.replace(/\/(?:236x|474x|564x|736x)\//, '/originals/')
+        return {
+          title: cleanTitle || 'Pinterest High-Res Image',
+          thumbnail: originalImg || rawImg,
+          platform: 'Pinterest',
+          qualities: ['Original Master Resolution (HD)', 'Standard JPEG'],
+          streamUrl: originalImg || rawImg,
+          downloadUrl: originalImg || rawImg,
+          fileType: 'image',
+          images: [{ url: originalImg || rawImg, thumbnail: originalImg || rawImg, title: cleanTitle }],
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('[Pinterest Native Scrape Warn]:', err)
+  }
+
+  // Engine B: yt-dlp fallback
+  try {
+    const { exec } = await import('child_process')
+    const p = new Promise<StreamResult | null>((resolve) => {
+      exec(
+        `python -m yt_dlp --dump-json --no-warnings "${targetUrl}"`,
+        { maxBuffer: 10 * 1024 * 1024, timeout: 12000 },
+        (err, stdout) => {
+          if (err || !stdout) return resolve(null)
+          try {
+            const d = JSON.parse(stdout)
+            const dlUrl = d.url || (d.formats && d.formats[d.formats.length - 1]?.url)
+            if (dlUrl) {
+              const isVid = d.vcodec && d.vcodec !== 'none' && !dlUrl.match(/\.(?:jpg|png|webp)/i)
+              resolve({
+                title: d.title ? d.title.slice(0, 70) : 'Pinterest Media',
+                thumbnail: d.thumbnail || dlUrl,
+                platform: 'Pinterest',
+                qualities: isVid ? ['1080p / 720p HD', 'Audio MP3'] : ['Original Master Resolution'],
+                streamUrl: dlUrl,
+                downloadUrl: dlUrl,
+                fileType: isVid ? 'video' : 'image',
+                images: !isVid ? [{ url: dlUrl, thumbnail: dlUrl, title: d.title || 'Pinterest Image' }] : undefined,
+              })
+            } else {
+              resolve(null)
+            }
+          } catch {
+            resolve(null)
+          }
+        }
+      )
+    })
+    const ytDlpRes = await p
+    if (ytDlpRes) return ytDlpRes
+  } catch (err) {
+    console.warn('[Pinterest yt-dlp Warn]:', err)
+  }
+
+  // Engine C: btch-downloader fallback
+  try {
+    const btchMod = await import('btch-downloader')
+    const btch = btchMod.default || btchMod
+    if (typeof btch?.pinterest === 'function') {
+      const pinRes = await btch.pinterest(targetUrl)
+      if (pinRes?.status && pinRes.result) {
+        const item = pinRes.result
+        const mediaUrl = item.url || item.download_url || (Array.isArray(item) ? item[0] : null)
+        if (typeof mediaUrl === 'string' && mediaUrl.startsWith('http')) {
+          const isVid = mediaUrl.includes('.mp4')
+          return {
+            title: 'Pinterest Media',
+            thumbnail: mediaUrl,
+            platform: 'Pinterest',
+            qualities: isVid ? ['HD Video', 'Audio MP3'] : ['Original Master Resolution'],
+            streamUrl: mediaUrl,
+            downloadUrl: mediaUrl,
+            fileType: isVid ? 'video' : 'image',
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('[Pinterest btch Warn]:', err)
+  }
+
   return null
 }
 
@@ -1348,6 +1686,12 @@ export async function resolveMediaUrl(url: string): Promise<StreamResult> {
   if (trimmedUrl.includes('tiktok.com')) {
     const tiktokResult = await resolveTikTok(trimmedUrl)
     if (tiktokResult) return tiktokResult
+  }
+
+  // 3b. Pinterest Dedicated Resolver (Pins, Videos, HD Images & pin.it shortlinks)
+  if (trimmedUrl.includes('pinterest.com') || trimmedUrl.includes('pin.it')) {
+    const pinResult = await resolvePinterest(trimmedUrl)
+    if (pinResult) return pinResult
   }
 
   // 4. Facebook Dedicated Resolver

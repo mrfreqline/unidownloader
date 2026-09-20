@@ -12,6 +12,8 @@ import MagicProgressBar from '@/components/MagicProgressBar'
 import FolderExplorer from '@/components/FolderExplorer'
 import AdBanner from '@/components/AdBanner'
 import InSiteAdPopup from '@/components/InSiteAdPopup'
+import PwaInstallPrompt from '@/components/PwaInstallPrompt'
+import AppDownloadModal from '@/components/AppDownloadModal'
 import SeoContent from '@/components/SeoContent'
 import { FolderResult } from '@/lib/downloader/terabox-resolver'
 import {
@@ -28,6 +30,8 @@ import {
   FileAudio,
   FileImage,
   Compass,
+  Monitor,
+  Smartphone,
 } from 'lucide-react'
 
 const ADSTERRA_SMARTLINK =
@@ -57,6 +61,7 @@ export default function Home() {
   // Modals
   const [isTokenModalOpen, setIsTokenModalOpen] = useState(false)
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false)
+  const [isAppModalOpen, setIsAppModalOpen] = useState(false)
   const [authReason, setAuthReason] = useState<'4k' | 'limit' | 'manual'>('manual')
 
   // Downloader input
@@ -425,6 +430,7 @@ export default function Home() {
           isDirectMovie: data.isDirectMovie,
           fileSize: data.fileSize,
           formats: data.formats,
+          images: data.images,
         })
       }
     } catch {
@@ -628,6 +634,7 @@ export default function Home() {
           setAuthReason('manual')
           setIsAuthModalOpen(true)
         }}
+        onOpenAppModal={() => setIsAppModalOpen(true)}
         isLoggedIn={isLoggedIn}
         userEmail={userEmail}
         onLogout={async () => {
@@ -644,6 +651,9 @@ export default function Home() {
 
       {/* Small 5-second in-site crossable sponsor popup (no redirect) */}
       <InSiteAdPopup />
+
+      {/* PWA Mobile & Desktop Install Prompt */}
+      <PwaInstallPrompt />
 
       {/* Main Container: Optimized padding for mobile screens */}
       <main className="flex-1 max-w-4xl w-full mx-auto px-3.5 sm:px-6 py-6 sm:py-10 space-y-6 sm:space-y-8">
@@ -679,6 +689,28 @@ export default function Home() {
           <p className="text-xs sm:text-sm text-zinc-500 max-w-xl mx-auto leading-relaxed px-2">
             Download any video, movie, or audio in the entire world. TikTok, Instagram, YouTube, Facebook, Twitter/X, and direct links in 1 click.
           </p>
+
+          {/* Quick App Download Shortcuts */}
+          <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
+            <a
+              href="/apps/A2Z-Downloader-Setup.exe"
+              download="A2Z-Downloader-Setup.exe"
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-[11px] sm:text-xs font-semibold bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-blue-400 border border-blue-500/30 transition shadow-xs cursor-pointer touch-manipulation"
+              title="Download Windows .EXE Installer"
+            >
+              <Monitor className="w-3.5 h-3.5" />
+              <span>Windows App (.exe)</span>
+            </a>
+            <button
+              type="button"
+              onClick={() => setIsAppModalOpen(true)}
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-[11px] sm:text-xs font-semibold bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 transition shadow-xs cursor-pointer touch-manipulation"
+              title="Install Mobile App (.apk / WebAPK)"
+            >
+              <Smartphone className="w-3.5 h-3.5" />
+              <span>Phone App (.apk)</span>
+            </button>
+          </div>
         </div>
 
         {/* Mobile In-App Browser Assistant Banner */}
@@ -999,6 +1031,11 @@ export default function Home() {
           setIsLoggedIn(true)
           setUserEmail(email)
         }}
+      />
+
+      <AppDownloadModal
+        isOpen={isAppModalOpen}
+        onClose={() => setIsAppModalOpen(false)}
       />
 
     </div>
