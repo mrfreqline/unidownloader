@@ -1126,6 +1126,83 @@ async function scrapeInstagramDirectPost(postUrl: string): Promise<any | null> {
   }
 }
 
+async function handleProfileRequest(query: string, platform: string) {
+  const autoResult = parseAndBuildAutoUrl(query, platform)
+  const effectivePlatform = autoResult.platform
+  const effectiveQuery = autoResult.constructedUrl
+
+  // 1. Check if user provided a direct media link (Reel, Post, Story Item, Spotlight)
+  if (autoResult.isDirectMedia) {
+    if (effectiveQuery.includes('instagram.com') || effectiveQuery.includes('instagr.am')) {
+      const directIg = await scrapeInstagramDirectPost(effectiveQuery)
+      if (directIg) {
+        return NextResponse.json({
+          success: true,
+          isMedia: true,
+          media: directIg,
+        })
+      }
+    }
+
+    // Universal stream-resolver fallback
+    try {
+      const { resolveMediaUrl } = await import('@/lib/downloader/stream-resolver')
+      const media = await resolveMediaUrl(effectiveQuery)
+      if (media) {
+        return NextResponse.json({
+          success: true,
+          isMedia: true,
+          media: {
+            title: media.title,
+            thumbnail: media.thumbnail,
+            streamUrl: media.streamUrl || media.downloadUrl,
+            downloadUrl: media.downloadUrl,
+            audioUrl: media.audioUrl,
+            platform: media.platform,
+            fileType: media.fileType || 'video',
+            qualities: media.qualities,
+            uploader: media.uploader,
+            images: media.images,
+          },
+        })
+      }
+    } catch (mediaErr: any) {
+      console.warn('[Direct Media Resolve in Profile Route warn]:', mediaErr?.message || mediaErr)
+    }
+  }
+
+  // 2. Fetch Profile details
+  let result: ProfileData | null = null
+
+  switch (effectivePlatform) {
+    case 'instagram':
+      result = await fetchInstagramProfile(query)
+      break
+    case 'tiktok':
+      result = await fetchTikTokProfile(query)
+      break
+    case 'snapchat':
+      result = await fetchSnapchatProfile(query)
+      break
+    case 'facebook':
+      result = await fetchFacebookProfile(query)
+      break
+    default:
+      result = await fetchInstagramProfile(query)
+  }
+
+  if (!result) {
+    return NextResponse.json(
+      {
+        error: `Profile not found on ${effectivePlatform.charAt(0).toUpperCase() + effectivePlatform.slice(1)}. Please double-check the username or link and try again.`,
+      },
+      { status: 404 }
+    )
+  }
+
+  return NextResponse.json({ success: true, isMedia: false, profile: result })
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}))
@@ -1135,82 +1212,27 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Please enter a username or profile link.' }, { status: 400 })
     }
 
-    const autoResult = parseAndBuildAutoUrl(query.trim(), platform)
-    const effectivePlatform = autoResult.platform
-    const effectiveQuery = autoResult.constructedUrl
-
-    // 1. Check if user provided a direct media link (Reel, Post, Story Item, Spotlight)
-    if (autoResult.isDirectMedia) {
-      if (effectiveQuery.includes('instagram.com') || effectiveQuery.includes('instagr.am')) {
-        const directIg = await scrapeInstagramDirectPost(effectiveQuery)
-        if (directIg) {
-          return NextResponse.json({
-            success: true,
-            isMedia: true,
-            media: directIg,
-          })
-        }
-      }
-
-      // Universal stream-resolver fallback
-      try {
-        const { resolveMediaUrl } = await import('@/lib/downloader/stream-resolver')
-        const media = await resolveMediaUrl(effectiveQuery)
-        if (media) {
-          return NextResponse.json({
-            success: true,
-            isMedia: true,
-            media: {
-              title: media.title,
-              thumbnail: media.thumbnail,
-              streamUrl: media.streamUrl || media.downloadUrl,
-              downloadUrl: media.downloadUrl,
-              audioUrl: media.audioUrl,
-              platform: media.platform,
-              fileType: media.fileType || 'video',
-              qualities: media.qualities,
-              uploader: media.uploader,
-              images: media.images,
-            },
-          })
-        }
-      } catch (mediaErr: any) {
-        console.warn('[Direct Media Resolve in Profile Route warn]:', mediaErr?.message || mediaErr)
-      }
-    }
-
-    // 2. Fetch Profile details
-    let result: ProfileData | null = null
-
-    switch (effectivePlatform) {
-      case 'instagram':
-        result = await fetchInstagramProfile(query.trim())
-        break
-      case 'tiktok':
-        result = await fetchTikTokProfile(query.trim())
-        break
-      case 'snapchat':
-        result = await fetchSnapchatProfile(query.trim())
-        break
-      case 'facebook':
-        result = await fetchFacebookProfile(query.trim())
-        break
-      default:
-        result = await fetchInstagramProfile(query.trim())
-    }
-
-    if (!result) {
-      return NextResponse.json(
-        {
-          error: `Profile not found on ${effectivePlatform.charAt(0).toUpperCase() + effectivePlatform.slice(1)}. Please double-check the username or link and try again.`,
-        },
-        { status: 404 }
-      )
-    }
-
-    return NextResponse.json({ success: true, isMedia: false, profile: result })
+    return await handleProfileRequest(query.trim(), platform)
   } catch (err: any) {
     console.error('[Profile API Error]:', err)
+    return NextResponse.json({ error: err?.message || 'An unexpected error occurred while fetching the profile.' }, { status: 500 })
+  }
+}
+
+export async function GET(req: NextRequest) {
+  try {
+    const { searchParams } = new URL(req.url)
+    const query = searchParams.get('query') || searchParams.get('username') || searchParams.get('url')
+    const platform = searchParams.get('platform') || 'instagram'
+
+    if (!query) {
+      // Direct browser navigation: redirect user to the visual Anonymous Viewer UI
+      return NextResponse.redirect(new URL('/anonymous-viewer', req.url))
+    }
+
+    return await handleProfileRequest(query.trim(), platform)
+  } catch (err: any) {
+    console.error('[Profile API GET Error]:', err)
     return NextResponse.json({ error: err?.message || 'An unexpected error occurred while fetching the profile.' }, { status: 500 })
   }
 }
