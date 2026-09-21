@@ -20,19 +20,12 @@ export async function POST(req: NextRequest) {
     let targetDownloadUrl = providedDownloadUrl
     const isAudio = mediaType === 'audio' || quality === 'Audio Only' || quality === 'mp3'
 
-    // If mediaType is audio, ensure targetDownloadUrl resolves to the actual audio stream
-    if (isAudio && url) {
-      if (!targetDownloadUrl || (!targetDownloadUrl.includes('.mp3') && !targetDownloadUrl.includes('audio') && !targetDownloadUrl.includes('128'))) {
-        try {
-          const resolved = await resolveMediaUrl(url)
-          if (resolved.audioUrl) {
-            targetDownloadUrl = resolved.audioUrl
-          }
-        } catch {}
-      }
-    } else if (!targetDownloadUrl && url) {
-      const resolved = await resolveMediaUrl(url)
-      targetDownloadUrl = resolved.downloadUrl
+    // If targetDownloadUrl was not provided by the client, resolve it from the media URL
+    if (!targetDownloadUrl && url) {
+      try {
+        const resolved = await resolveMediaUrl(url)
+        targetDownloadUrl = (isAudio ? resolved.audioUrl : null) || resolved.downloadUrl || resolved.streamUrl
+      } catch {}
     }
 
     if (!targetDownloadUrl) {
@@ -42,13 +35,34 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // Check if user requested Media Enhancement (trim, compress, convert container, audio normalize)
-    if (enhancement && enhancement.enabled) {
+    const needsAudioExtraction =
+      isAudio &&
+      targetDownloadUrl &&
+      !targetDownloadUrl.toLowerCase().includes('.mp3') &&
+      !targetDownloadUrl.toLowerCase().includes('audio/mpeg')
+
+    // Check if user requested Media Enhancement or needs audio extracted to MP3 from a video stream
+    if ((enhancement && enhancement.enabled) || needsAudioExtraction) {
       try {
+        const effectiveEnhancement =
+          enhancement && enhancement.enabled
+            ? enhancement
+            : {
+                enabled: true,
+                targetFormat: 'mp3' as const,
+                audioBitrate: '320k' as const,
+                compressionLevel: 'original' as const,
+                normalizeAudio: false,
+                muteAudio: false,
+                trimEnabled: false,
+                trimStart: 0,
+                trimEnd: 0,
+              }
+
         const enhanced = await processMediaEnhancement(
           targetDownloadUrl,
-          mediaType || 'video',
-          enhancement,
+          isAudio ? 'audio' : (mediaType || 'video'),
+          effectiveEnhancement,
           title
         )
 

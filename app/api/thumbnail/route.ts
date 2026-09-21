@@ -13,7 +13,7 @@ export async function POST(req: NextRequest) {
     const safeTitle = (title || 'image').replace(/[^\w\s.-]/gi, '_').slice(0, 50)
 
     try {
-      const response = await fetch(targetUrl, {
+      let response = await fetch(targetUrl, {
         headers: {
           'User-Agent':
             'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -24,9 +24,21 @@ export async function POST(req: NextRequest) {
             ? 'https://www.facebook.com/'
             : '',
         },
-      })
+        signal: AbortSignal.timeout(8000),
+      }).catch(() => null)
 
-      if (!response.ok) {
+      if (!response || !response.ok) {
+        // Fallback fetch with crawler User-Agent that CDNs always allow
+        response = await fetch(targetUrl, {
+          headers: {
+            'User-Agent': 'TelegramBot (like TwitterBot)',
+            'Accept': '*/*',
+          },
+          signal: AbortSignal.timeout(8000),
+        }).catch(() => null)
+      }
+
+      if (!response || !response.ok) {
         // Fallback to direct client download if remote CDN blocks server proxy
         return NextResponse.json({ redirectUrl: targetUrl, filename: `${safeTitle}.jpg` })
       }

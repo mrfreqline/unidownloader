@@ -125,8 +125,8 @@ export default function MediaCard({
     if (activeTab === 'audio') {
       const audioFormat = media.formats?.find(f => f.type === 'audio' || (f.label && f.label.toLowerCase().includes('mp3')))
       targetUrl = audioFormat?.url || media.audioUrl || media.downloadUrl
-    } else if (activeTab === 'image' || media.fileType === 'image') {
-      targetUrl = media.downloadUrl || media.thumbnail
+    } else if (activeTab === 'image') {
+      targetUrl = (media.fileType === 'image' ? (media.downloadUrl || media.thumbnail) : media.thumbnail) || media.thumbnail
     } else if (media.formats && media.formats.length > 0) {
       const cleanQ = selectedQuality.replace(/[^\d]/g, '')
       const match = media.formats.find(

@@ -381,71 +381,139 @@ export async function resolveFacebook(url: string): Promise<StreamResult | null>
   return null
 }
 
+// Helper to enforce strict timeouts per scraper tier to avoid serverless function hangs
+function withTimeout(promise: Promise<any>, ms: number): Promise<any> {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error(`Operation timed out after ${ms}ms`)), ms)
+    ),
+  ])
+}
+
+// Accurately determine whether a scraped Instagram asset is a video stream
+function isLikelyInstagramVideo(urlStr?: string): boolean {
+  if (!urlStr || typeof urlStr !== 'string') return false
+  const u = urlStr.toLowerCase()
+  if (u.includes('.mp4') || u.includes('.m4v') || u.includes('.mov') || u.includes('.webm')) return true
+  if (u.includes('/o1/v/') || u.includes('/v/t16/') || u.includes('/v/t2/')) return true
+  if (u.includes('bytestart=') || u.includes('video_url')) return true
+  if (u.includes('rapidcdn.app/v2') || u.includes('rapidcdn.app/d') || u.includes('snapxcdn.com/v2')) return true
+  return false
+}
+
 // 3. Instagram Dedicated Multi-Tier Resolver
 export async function resolveInstagram(url: string): Promise<StreamResult | null> {
   const cleanUrl = url.split('?')[0].trim()
+  const isReelUrl = /(?:reel|reels|tv)\//i.test(url) || /(?:reel|reels|tv)\//i.test(cleanUrl)
   const shortcodeMatch = cleanUrl.match(/(?:reel|reels|p|tv)\/([a-zA-Z0-9_-]+)/)
   const shortcode = shortcodeMatch ? shortcodeMatch[1] : null
 
-  // Engine A: ruhend-scraper igdl
+  // Tier 1: snapsave-media-downloader (SnapSave / SnapInsta High-Speed Engine)
   try {
-    const ruhendMod = await import('ruhend-scraper')
-    const ruhend = ruhendMod.default || ruhendMod
-    if (typeof ruhend?.igdl === 'function') {
-      const igRes = await ruhend.igdl(cleanUrl)
-      if (Array.isArray(igRes) && igRes.length > 0 && typeof igRes[0] === 'string' && igRes[0].startsWith('http')) {
-        const videoUrl = igRes[0]
-        const isImage = !videoUrl.includes('.mp4')
-        const items = igRes.filter((u: any) => typeof u === 'string' && u.startsWith('http')).map((u: string, idx: number) => ({
-          url: u,
-          thumbnail: u,
-          title: `Item ${idx + 1}`
-        }))
-        return {
-          title: isImage ? `Instagram Photo (${shortcode || 'Post'})` : `Instagram Reel (${shortcode || 'Video'})`,
-          platform: 'Instagram',
-          thumbnail: igRes[0],
-          uploader: 'Instagram Creator',
-          qualities: isImage ? ['High Resolution Image', 'Standard JPEG'] : ['1080p Full HD', '720p HD', 'Audio MP3'],
-          streamUrl: videoUrl,
-          downloadUrl: videoUrl,
-          audioUrl: isImage ? undefined : videoUrl,
-          fileType: isImage ? 'image' : 'video',
-          images: items.length > 1 ? items : undefined,
+    const snapMod = await import('snapsave-media-downloader')
+    const snapsave = (snapMod as any).snapsave || (snapMod as any).default || snapMod
+    if (typeof snapsave === 'function') {
+      const snapRes = (await withTimeout(
+        snapsave(cleanUrl, { retry: 1, retryDelay: 200 }),
+        6500
+      )) as any
+      if (snapRes?.success && snapRes.data?.media && Array.isArray(snapRes.data.media)) {
+        const items = snapRes.data.media.filter(
+          (m: any) => m?.url && typeof m.url === 'string' && m.url.startsWith('http')
+        )
+        if (items.length > 0) {
+          const hasVideo = isReelUrl || items.some((m: any) => m.type === 'video' || (m.type !== 'image' && isLikelyInstagramVideo(m.url)))
+          if (hasVideo) {
+            const videoItem = items.find((m: any) => m.type === 'video') || items[0]
+            const thumb = videoItem.thumbnail || snapRes.data.preview || items[0].thumbnail
+            return {
+              title: isReelUrl
+                ? `Instagram Reel (${shortcode || 'Video'})`
+                : `Instagram Video (${shortcode || 'Post'})`,
+              platform: 'Instagram',
+              thumbnail: thumb,
+              uploader: 'Instagram Creator',
+              qualities: ['1080p Full HD', '720p HD', 'Audio MP3'],
+              streamUrl: videoItem.url,
+              downloadUrl: videoItem.url,
+              audioUrl: videoItem.url,
+              fileType: 'video',
+            }
+          } else {
+            // Instagram Photo or Multi-Photo Carousel
+            const gallery = items.map((m: any, idx: number) => ({
+              url: m.url,
+              thumbnail: m.thumbnail || m.url,
+              title: `Photo ${idx + 1}`,
+            }))
+            const first = items[0]
+            return {
+              title: items.length > 1
+                ? `Instagram Photos (${items.length} Images)`
+                : `Instagram Photo (${shortcode || 'Post'})`,
+              platform: 'Instagram',
+              thumbnail: first.thumbnail || first.url,
+              uploader: 'Instagram Creator',
+              qualities: ['High Resolution Image', 'Standard JPEG'],
+              streamUrl: first.url,
+              downloadUrl: first.url,
+              fileType: 'image',
+              images: gallery.length > 1 ? gallery : undefined,
+            }
+          }
         }
       }
     }
   } catch (err) {
-    console.warn('[Instagram ruhend.igdl warn]:', err)
+    console.warn('[Instagram snapsave warn]:', err)
   }
 
-  // Engine B: ruhend-scraper igdl2
+  // Tier 2: ruhend-scraper igdl2 (SnapInsta API wrapper)
   try {
-    const ruhendMod = await import('ruhend-scraper')
-    const ruhend = ruhendMod.default || ruhendMod
+    let ruhend: any = null
+    try {
+      ruhend = require('ruhend-scraper')
+    } catch {
+      const ruhendMod = await import('ruhend-scraper').catch(() => null)
+      ruhend = ruhendMod?.default || ruhendMod
+    }
     if (typeof ruhend?.igdl2 === 'function') {
-      const igRes2 = await ruhend.igdl2(cleanUrl)
+      const igRes2 = await withTimeout(ruhend.igdl2(cleanUrl), 4500)
       if (igRes2?.status && Array.isArray(igRes2?.data) && igRes2.data.length > 0) {
         const items = igRes2.data.filter((it: any) => it?.url && typeof it.url === 'string' && it.url.startsWith('http'))
         if (items.length > 0) {
-          const first = items[0]
-          const isVideo = items.some((it: any) => it.url && it.url.includes('.mp4'))
-          const gallery = items.map((it: any, idx: number) => ({
-            url: it.url,
-            thumbnail: it.thumbnail || it.url,
-            title: `Item ${idx + 1}`
-          }))
-          return {
-            title: isVideo ? `Instagram Video (${shortcode || 'Reel'})` : `Instagram Photo (${shortcode || 'Post'})`,
-            platform: 'Instagram',
-            thumbnail: first.thumbnail || first.url,
-            uploader: 'Instagram Creator',
-            qualities: isVideo ? ['1080p Full HD', '720p HD', 'Audio MP3'] : ['High Resolution Image', 'Standard JPEG'],
-            streamUrl: first.url,
-            downloadUrl: first.url,
-            audioUrl: isVideo ? first.url : undefined,
-            fileType: isVideo ? 'video' : 'image',
-            images: gallery.length > 1 ? gallery : undefined,
+          const hasVideo = isReelUrl || items.some((it: any) => isLikelyInstagramVideo(it.url))
+          if (hasVideo) {
+            const videoItem = items.find((it: any) => isLikelyInstagramVideo(it.url)) || items[0]
+            return {
+              title: isReelUrl ? `Instagram Reel (${shortcode || 'Video'})` : `Instagram Video (${shortcode || 'Post'})`,
+              platform: 'Instagram',
+              thumbnail: videoItem.thumbnail || videoItem.url,
+              uploader: 'Instagram Creator',
+              qualities: ['1080p Full HD', '720p HD', 'Audio MP3'],
+              streamUrl: videoItem.url,
+              downloadUrl: videoItem.url,
+              audioUrl: videoItem.url,
+              fileType: 'video',
+            }
+          } else {
+            const gallery = items.map((it: any, idx: number) => ({
+              url: it.url,
+              thumbnail: it.thumbnail || it.url,
+              title: `Photo ${idx + 1}`
+            }))
+            return {
+              title: items.length > 1 ? `Instagram Photos (${items.length} Images)` : `Instagram Photo (${shortcode || 'Post'})`,
+              platform: 'Instagram',
+              thumbnail: items[0].thumbnail || items[0].url,
+              uploader: 'Instagram Creator',
+              qualities: ['High Resolution Image', 'Standard JPEG'],
+              streamUrl: items[0].url,
+              downloadUrl: items[0].url,
+              fileType: 'image',
+              images: gallery.length > 1 ? gallery : undefined,
+            }
           }
         }
       }
@@ -454,33 +522,101 @@ export async function resolveInstagram(url: string): Promise<StreamResult | null
     console.warn('[Instagram ruhend.igdl2 warn]:', err)
   }
 
-  // Engine C: btch-downloader igdl
+  // Tier 3: ruhend-scraper igdl
   try {
-    const btchMod = await import('btch-downloader')
-    const btch = btchMod.default || btchMod
+    let ruhend: any = null
+    try {
+      ruhend = require('ruhend-scraper')
+    } catch {
+      const ruhendMod = await import('ruhend-scraper').catch(() => null)
+      ruhend = ruhendMod?.default || ruhendMod
+    }
+    if (typeof ruhend?.igdl === 'function') {
+      const igRes = await withTimeout(ruhend.igdl(cleanUrl), 4000)
+      if (Array.isArray(igRes) && igRes.length > 0 && typeof igRes[0] === 'string' && igRes[0].startsWith('http')) {
+        const hasVideo = isReelUrl || igRes.some((u: string) => isLikelyInstagramVideo(u))
+        if (hasVideo) {
+          const videoUrl = igRes.find((u: string) => isLikelyInstagramVideo(u)) || igRes[0]
+          return {
+            title: isReelUrl ? `Instagram Reel (${shortcode || 'Video'})` : `Instagram Video (${shortcode || 'Post'})`,
+            platform: 'Instagram',
+            thumbnail: igRes[0],
+            uploader: 'Instagram Creator',
+            qualities: ['1080p Full HD', '720p HD', 'Audio MP3'],
+            streamUrl: videoUrl,
+            downloadUrl: videoUrl,
+            audioUrl: videoUrl,
+            fileType: 'video',
+          }
+        } else {
+          const items = igRes.filter((u: any) => typeof u === 'string' && u.startsWith('http')).map((u: string, idx: number) => ({
+            url: u,
+            thumbnail: u,
+            title: `Photo ${idx + 1}`
+          }))
+          return {
+            title: items.length > 1 ? `Instagram Photos (${items.length} Images)` : `Instagram Photo (${shortcode || 'Post'})`,
+            platform: 'Instagram',
+            thumbnail: igRes[0],
+            uploader: 'Instagram Creator',
+            qualities: ['High Resolution Image', 'Standard JPEG'],
+            streamUrl: igRes[0],
+            downloadUrl: igRes[0],
+            fileType: 'image',
+            images: items.length > 1 ? items : undefined,
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('[Instagram ruhend.igdl warn]:', err)
+  }
+
+  // Tier 4: btch-downloader igdl
+  try {
+    let btch: any = null
+    try {
+      btch = require('btch-downloader')
+    } catch {
+      const btchMod = await import('btch-downloader').catch(() => null)
+      btch = btchMod?.default || btchMod
+    }
     if (typeof btch?.igdl === 'function') {
-      const btchRes = await btch.igdl(cleanUrl)
+      const btchRes = await withTimeout(btch.igdl(cleanUrl), 4000)
       if (btchRes?.status && Array.isArray(btchRes?.result) && btchRes.result.length > 0) {
         const items = btchRes.result.filter((it: any) => it?.url && typeof it.url === 'string' && it.url.startsWith('http'))
         if (items.length > 0) {
-          const first = items[0]
-          const isVideo = items.some((it: any) => it.url && it.url.includes('.mp4'))
-          const gallery = items.map((it: any, idx: number) => ({
-            url: it.url,
-            thumbnail: it.thumbnail || it.url,
-            title: `Item ${idx + 1}`
-          }))
-          return {
-            title: isVideo ? `Instagram Video (${shortcode || 'Reel'})` : `Instagram Photo (${shortcode || 'Post'})`,
-            platform: 'Instagram',
-            thumbnail: first.thumbnail || first.url,
-            uploader: 'Instagram Creator',
-            qualities: isVideo ? ['1080p Full HD', '720p HD', 'Audio MP3'] : ['High Resolution Image', 'Standard JPEG'],
-            streamUrl: first.url,
-            downloadUrl: first.url,
-            audioUrl: isVideo ? first.url : undefined,
-            fileType: isVideo ? 'video' : 'image',
-            images: gallery.length > 1 ? gallery : undefined,
+          const hasVideo = isReelUrl || items.some((it: any) => isLikelyInstagramVideo(it.url))
+          if (hasVideo) {
+            const videoItem = items.find((it: any) => isLikelyInstagramVideo(it.url)) || items[0]
+            return {
+              title: isReelUrl ? `Instagram Reel (${shortcode || 'Video'})` : `Instagram Video (${shortcode || 'Post'})`,
+              platform: 'Instagram',
+              thumbnail: videoItem.thumbnail || videoItem.url,
+              uploader: 'Instagram Creator',
+              qualities: ['1080p Full HD', '720p HD', 'Audio MP3'],
+              streamUrl: videoItem.url,
+              downloadUrl: videoItem.url,
+              audioUrl: videoItem.url,
+              fileType: 'video',
+            }
+          } else {
+            const gallery = items.map((it: any, idx: number) => ({
+              url: it.url,
+              thumbnail: it.thumbnail || it.url,
+              title: `Photo ${idx + 1}`
+            }))
+            return {
+              title: items.length > 1 ? `Instagram Photos (${items.length} Images)` : `Instagram Photo (${shortcode || 'Post'})`,
+              platform: 'Instagram',
+              thumbnail: items[0].thumbnail || items[0].url,
+              uploader: 'Instagram Creator',
+              qualities: ['High Resolution Image', 'Standard JPEG'],
+              streamUrl: items[0].url,
+              downloadUrl: items[0].url,
+              fileType: 'image',
+              images: gallery.length > 1 ? gallery : undefined,
+            }
           }
         }
       }
@@ -489,11 +625,11 @@ export async function resolveInstagram(url: string): Promise<StreamResult | null
     console.warn('[Instagram btch.igdl warn]:', err)
   }
 
-  // Engine D: Local yt-dlp
+  // Tier 5: Local yt-dlp (on platforms where Python is available)
   try {
     const { exec } = await import('child_process')
     const p = new Promise<StreamResult | null>((resolve) => {
-      exec(`python -m yt_dlp --dump-json --no-warnings "${cleanUrl}"`, { maxBuffer: 10 * 1024 * 1024, timeout: 12000 }, (err, stdout) => {
+      exec(`python -m yt_dlp --dump-json --no-warnings "${cleanUrl}"`, { maxBuffer: 10 * 1024 * 1024, timeout: 8000 }, (err, stdout) => {
         if (err || !stdout) return resolve(null)
         try {
           const d = JSON.parse(stdout)
@@ -504,7 +640,7 @@ export async function resolveInstagram(url: string): Promise<StreamResult | null
               title: e.title || `Item ${idx + 1}`,
             }))
             const first = gallery[0]
-            const isVid = d.entries.some((e: any) => e.vcodec && e.vcodec !== 'none')
+            const isVid = isReelUrl || d.entries.some((e: any) => e.vcodec && e.vcodec !== 'none')
             resolve({
               title: `${d.title || 'Instagram Post'} (${gallery.length} Items)`,
               platform: 'Instagram',
@@ -515,14 +651,14 @@ export async function resolveInstagram(url: string): Promise<StreamResult | null
               downloadUrl: first.url,
               audioUrl: isVid ? first.url : undefined,
               fileType: isVid ? 'video' : 'image',
-              images: gallery,
+              images: isVid ? undefined : gallery,
             })
             return
           }
           if (d.url) {
-            const isVid = d.vcodec && d.vcodec !== 'none'
+            const isVid = isReelUrl || (d.vcodec && d.vcodec !== 'none')
             resolve({
-              title: d.title || `Instagram ${isVid ? 'Video' : 'Photo'} (${shortcode || 'Post'})`,
+              title: d.title || (isVid ? `Instagram Reel (${shortcode || 'Video'})` : `Instagram Photo (${shortcode || 'Post'})`),
               platform: 'Instagram',
               thumbnail: d.thumbnail || '',
               uploader: d.uploader || 'Instagram Creator',
@@ -540,13 +676,13 @@ export async function resolveInstagram(url: string): Promise<StreamResult | null
         }
       })
     })
-    const ytDlpRes = await p
+    const ytDlpRes = await withTimeout(p, 8500)
     if (ytDlpRes) return ytDlpRes
   } catch (err) {
     console.warn('[Instagram yt-dlp warn]:', err)
   }
 
-  // Engine E: Embed Scraper for public posts
+  // Tier 6: Embed Scraper for public posts
   if (shortcode) {
     try {
       const embedUrl = `https://www.instagram.com/p/${shortcode}/embed/captioned/`
@@ -556,7 +692,7 @@ export async function resolveInstagram(url: string): Promise<StreamResult | null
             'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
           'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
         },
-        signal: AbortSignal.timeout(6000),
+        signal: AbortSignal.timeout(5000),
       })
 
       if (res.ok) {
@@ -579,28 +715,31 @@ export async function resolveInstagram(url: string): Promise<StreamResult | null
             streamUrl: videoUrl,
             downloadUrl: videoUrl,
             audioUrl: videoUrl,
+            fileType: 'video',
           }
         }
 
-        // Instagram Photo / Image extraction
-        const imgMatch =
-          thumbMatch ||
-          html.match(/<img[^>]+class="[^"]*EmbeddedMediaImage[^"]*"[^>]+src="([^">]+)"/i) ||
-          html.match(/<img[^>]+src="([^">]+)"[^>]+class="[^"]*EmbeddedMediaImage/i) ||
-          html.match(/<meta\s+property="og:image"\s+content="([^"]+)"/i)
+        // CRITICAL: NEVER classify a Reel as a photo! A Reel poster image must NOT be returned as an image download.
+        if (!isReelUrl) {
+          const imgMatch =
+            thumbMatch ||
+            html.match(/<img[^>]+class="[^"]*EmbeddedMediaImage[^"]*"[^>]+src="([^">]+)"/i) ||
+            html.match(/<img[^>]+src="([^">]+)"[^>]+class="[^"]*EmbeddedMediaImage/i) ||
+            html.match(/<meta\s+property="og:image"\s+content="([^"]+)"/i)
 
-        if (imgMatch) {
-          const imgUrl = cleanEscapedUrl(imgMatch[1])
-          if (imgUrl && imgUrl.startsWith('http')) {
-            return {
-              title: titleMatch ? titleMatch[1].replace(/<[^>]+>/g, '').trim().slice(0, 60) : `Instagram Photo (${shortcode || 'Post'})`,
-              platform: 'Instagram',
-              thumbnail: imgUrl,
-              uploader: 'Instagram Creator',
-              qualities: ['High Resolution Image', 'Standard JPEG'],
-              streamUrl: imgUrl,
-              downloadUrl: imgUrl,
-              fileType: 'image',
+          if (imgMatch) {
+            const imgUrl = cleanEscapedUrl(imgMatch[1])
+            if (imgUrl && imgUrl.startsWith('http')) {
+              return {
+                title: titleMatch ? titleMatch[1].replace(/<[^>]+>/g, '').trim().slice(0, 60) : `Instagram Photo (${shortcode || 'Post'})`,
+                platform: 'Instagram',
+                thumbnail: imgUrl,
+                uploader: 'Instagram Creator',
+                qualities: ['High Resolution Image', 'Standard JPEG'],
+                streamUrl: imgUrl,
+                downloadUrl: imgUrl,
+                fileType: 'image',
+              }
             }
           }
         }
@@ -1705,7 +1844,7 @@ export async function resolveMediaUrl(url: string): Promise<StreamResult> {
   }
 
   // 5. Instagram Dedicated Resolver
-  if (trimmedUrl.includes('instagram.com')) {
+  if (trimmedUrl.includes('instagram.com') || trimmedUrl.includes('instagr.am')) {
     const igResult = await resolveInstagram(trimmedUrl)
     if (igResult) return igResult
   }

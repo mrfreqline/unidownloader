@@ -491,8 +491,21 @@ export default function Home() {
 
       if (mediaType === 'image') {
         endpoint = `${origin}/api/thumbnail`
+        let targetImg = downloadUrl
+        if (
+          !targetImg ||
+          (analyzedMedia.fileType !== 'image' && targetImg === analyzedMedia.downloadUrl) ||
+          targetImg.includes('.mp4') ||
+          targetImg.includes('/o1/v/') ||
+          targetImg.includes('rapidcdn.app/v2')
+        ) {
+          targetImg =
+            analyzedMedia.thumbnail ||
+            (analyzedMedia.images && analyzedMedia.images[0]?.url) ||
+            analyzedMedia.downloadUrl
+        }
         payload = {
-          thumbnailUrl: downloadUrl || analyzedMedia.downloadUrl || analyzedMedia.thumbnail,
+          thumbnailUrl: targetImg,
           title: analyzedMedia.title,
         }
       }

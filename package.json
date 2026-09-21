@@ -26,6 +26,7 @@
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "ruhend-scraper": "^10.0.3",
+    "snapsave-media-downloader": "^2.5.1",
     "stripe": "^22.2.0"
   },
   "devDependencies": {
