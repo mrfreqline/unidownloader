@@ -17,6 +17,7 @@ import {
   HardDrive,
   QrCode,
   Smartphone,
+  Scissors,
 } from 'lucide-react'
 import MediaEnhancer, { EnhancementSettings } from './MediaEnhancer'
 import QrModal from './QrModal'
@@ -230,6 +231,29 @@ export default function MediaCard({
               <QrCode className="w-3 h-3 text-emerald-500" />
               <span>Send to Phone</span>
             </button>
+            {media.fileType !== 'image' && (
+              <button
+                type="button"
+                onClick={() => {
+                  setEnhancement(prev => ({
+                    ...prev,
+                    enabled: true,
+                    trimEnabled: true,
+                    trimStart: 0,
+                    trimEnd: Math.min(media.durationSeconds || 60, 60),
+                  }))
+                }}
+                className={`px-2.5 py-0.5 rounded-full text-[10px] font-mono flex items-center gap-1 transition cursor-pointer border ${
+                  enhancement.trimEnabled
+                    ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
+                    : 'bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-blue-400 border-blue-500/30'
+                }`}
+                title="Trim a short clip or audio ringtone (up to 60 seconds)"
+              >
+                <Scissors className="w-3 h-3" />
+                <span>{enhancement.trimEnabled ? '✂️ Trimming Active (Max 60s)' : '✂️ Trim Clip / Ringtone (60s)'}</span>
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -513,14 +537,22 @@ export default function MediaCard({
           {isDownloading ? (
             <>
               <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-              <span>Fetching download stream...</span>
+              <span>
+                {enhancement.trimEnabled
+                  ? 'Generating & saving clip to device...'
+                  : 'Fetching download stream...'}
+              </span>
             </>
           ) : (
             <>
               <Download className="w-4 h-4 stroke-[2.5]" />
               <span>
                 Download{' '}
-                {activeTab === 'image' || media.fileType === 'image'
+                {enhancement.trimEnabled
+                  ? activeTab === 'audio' || enhancement.targetFormat === 'mp3'
+                    ? `${Math.round(Math.max(1, enhancement.trimEnd - enhancement.trimStart))}s Ringtone (MP3)`
+                    : `${Math.round(Math.max(1, enhancement.trimEnd - enhancement.trimStart))}s Video Clip (${(enhancement.targetFormat || 'mp4').toUpperCase()})`
+                  : activeTab === 'image' || media.fileType === 'image'
                   ? media.images && media.images.length > 1
                     ? `All ${media.images.length} High-Res Images`
                     : 'High-Res Image'

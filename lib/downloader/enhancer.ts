@@ -102,16 +102,29 @@ export async function processMediaEnhancement(
 
   const rawExt = (settings.targetFormat || (isAudioMode ? 'mp3' : 'mp4')).toLowerCase()
   const ext = rawExt.replace(/^\./, '')
-  const safeTitle = (baseTitle || 'enhanced_media').slice(0, 40).replace(/[^\w\s.-]/gi, '_')
-  const fileName = `${safeTitle}.${ext}`
+  const safeTitle = (baseTitle || 'media').slice(0, 35).replace(/[^\w\s.-]/gi, '_')
 
-  const tempInputPath = path.join(
-    os.tmpdir(),
-    `a2z_in_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.tmp`
-  )
+  // Enforce 60-second limit for trimmed clips / ringtones
+  const trimStart = typeof settings.trimStart === 'number' ? Math.max(0, settings.trimStart) : 0
+  let trimDuration = 60
+  if (settings.trimEnabled && typeof settings.trimEnd === 'number' && settings.trimEnd > trimStart) {
+    trimDuration = Math.min(60, Math.max(1, settings.trimEnd - trimStart))
+  }
+
+  const clipSuffix = settings.trimEnabled
+    ? isAudioMode
+      ? '_ringtone'
+      : `_clip_${Math.round(trimDuration)}s`
+    : ''
+  const fileName = `${safeTitle}${clipSuffix}.${ext}`
+
   const outPath = path.join(
     os.tmpdir(),
     `a2z_enh_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`
+  )
+  const tempInputPath = path.join(
+    os.tmpdir(),
+    `a2z_in_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.tmp`
   )
 
   const cleanup = () => {
@@ -123,116 +136,96 @@ export async function processMediaEnhancement(
     } catch {}
   }
 
-  // Pre-download media stream with browser headers to avoid CDN 403 Forbidden errors
-  try {
-    const streamRes = await fetch(inputUrl, {
-      headers: {
-        'User-Agent':
-          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-        'Accept': '*/*',
-        'Accept-Language': 'en-US,en;q=0.9',
-        'Referer': 'https://www.google.com/',
-      },
-      signal: AbortSignal.timeout(45000),
-    })
+  const userAgent =
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
 
-    if (!streamRes.ok || !streamRes.body) {
-      throw new Error(`Failed to fetch media stream (${streamRes.status} ${streamRes.statusText})`)
-    }
+  return new Promise<EnhancedResult>(async (resolve, reject) => {
+    // 25-second execution safety guard
+    const timeoutTimer = setTimeout(() => {
+      try {
+        cleanup()
+      } catch {}
+      reject(new Error('Clip extraction timed out. Please try a shorter duration.'))
+    }, 25000)
 
-    const fileStream = fs.createWriteStream(tempInputPath)
-    // @ts-ignore
-    await pipeline(streamRes.body, fileStream)
-  } catch (fetchErr: any) {
-    cleanup()
-    throw new Error(`Failed to download source stream: ${fetchErr?.message || fetchErr}`)
-  }
-
-  return new Promise<EnhancedResult>((resolve, reject) => {
     try {
-      const cmd = ffmpeg(tempInputPath)
+      const cmd = ffmpeg()
 
-      // 1. Trimming
-      if (
-        settings.trimEnabled &&
-        typeof settings.trimStart === 'number' &&
-        typeof settings.trimEnd === 'number' &&
-        settings.trimEnd > settings.trimStart
-      ) {
-        cmd.setStartTime(Math.max(0, settings.trimStart))
-        cmd.setDuration(settings.trimEnd - settings.trimStart)
-      }
+      // When trimming is enabled, use fast input-seeking directly over HTTP
+      // This avoids pre-downloading large 100MB+ source files to disk!
+      if (settings.trimEnabled && inputUrl.startsWith('http')) {
+        cmd.input(inputUrl)
+        cmd.inputOptions([
+          '-user_agent', userAgent,
+          '-referer', 'https://www.google.com/',
+          '-ss', trimStart.toString(),
+        ])
+        cmd.duration(trimDuration)
 
-      // 2. Audio Processing
-      if (isAudioMode) {
-        cmd.noVideo()
-
-        if (ext === 'wav') {
-          cmd.audioCodec('pcm_s16le')
-        } else if (ext === 'flac') {
-          cmd.audioCodec('flac')
-        } else if (ext === 'aac') {
-          cmd.audioCodec('aac').audioBitrate(settings.audioBitrate || '320k')
-        } else {
-          cmd.audioCodec('libmp3lame').audioBitrate(settings.audioBitrate || '320k')
-        }
-
-        if (settings.normalizeAudio) {
-          cmd.audioFilters('loudnorm=I=-16:TP=-1.5:LRA=11')
-        }
-      } else {
-        // 3. Video Processing
-        if (settings.muteAudio) {
-          cmd.noAudio()
-        } else {
-          cmd.audioBitrate(settings.audioBitrate || '192k')
+        if (isAudioMode) {
+          cmd.noVideo()
+          if (ext === 'wav') {
+            cmd.audioCodec('pcm_s16le')
+          } else {
+            cmd.audioCodec('libmp3lame').audioBitrate(settings.audioBitrate || '192k')
+          }
           if (settings.normalizeAudio) {
             cmd.audioFilters('loudnorm=I=-16:TP=-1.5:LRA=11')
           }
-        }
-
-        // Output container & compression (using ultrafast presets for serverless responsiveness)
-        if (ext === 'gif') {
-          cmd.outputOptions([
-            '-vf',
-            'fps=10,scale=480:-1:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse',
-          ])
-        } else if (ext === 'webm') {
-          const crfVal = settings.compressionLevel === 'small' ? '36' : '30'
-          cmd.outputOptions(['-c:v', 'libvpx-vp9', '-b:v', '0', '-crf', crfVal, '-deadline', 'realtime'])
-        } else if (ext === 'mkv') {
-          const crfVal = settings.compressionLevel === 'small' ? '28' : '23'
-          cmd.outputOptions(['-c:v', 'libx264', '-preset', 'ultrafast', '-crf', crfVal])
         } else {
-          // Default MP4
-          if (settings.compressionLevel === 'small') {
+          // Video clipping: Use fast stream copy (-c copy) when container matches, or fast ultrafast encode
+          if (ext === 'mp4' || ext === 'mkv') {
             cmd.outputOptions([
-              '-c:v',
-              'libx264',
-              '-preset',
-              'ultrafast',
-              '-crf',
-              '28',
-              '-vf',
-              "scale='min(1280,iw)':-2",
+              '-c', 'copy',
+              '-avoid_negative_ts', 'make_zero',
             ])
-          } else if (settings.compressionLevel === 'balanced') {
-            cmd.outputOptions(['-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '23'])
+          } else if (ext === 'gif') {
+            cmd.outputOptions([
+              '-vf',
+              'fps=10,scale=400:-1:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse',
+            ])
           } else {
-            // Original / High fidelity
-            cmd.outputOptions(['-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20'])
+            cmd.outputOptions(['-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '24'])
           }
         }
-      }
-
-      // Execution timeout guard (60 seconds)
-      const timeoutTimer = setTimeout(() => {
+      } else {
+        // Standard full file processing: pre-fetch stream with timeout
         try {
-          (cmd as any).kill('SIGKILL')
-        } catch {}
-        cleanup()
-        reject(new Error('Media enhancement timed out. Please try a shorter clip or balanced profile.'))
-      }, 60000)
+          const streamRes = await fetch(inputUrl, {
+            headers: {
+              'User-Agent': userAgent,
+              'Accept': '*/*',
+              'Referer': 'https://www.google.com/',
+            },
+            signal: AbortSignal.timeout(20000),
+          })
+
+          if (!streamRes.ok || !streamRes.body) {
+            throw new Error(`Failed to fetch media stream (${streamRes.status})`)
+          }
+
+          const fileStream = fs.createWriteStream(tempInputPath)
+          // @ts-ignore
+          await pipeline(streamRes.body, fileStream)
+        } catch (fetchErr: any) {
+          cleanup()
+          clearTimeout(timeoutTimer)
+          return reject(new Error(`Source stream fetch failed: ${fetchErr?.message || fetchErr}`))
+        }
+
+        cmd.input(tempInputPath)
+
+        if (isAudioMode) {
+          cmd.noVideo()
+          if (ext === 'wav') {
+            cmd.audioCodec('pcm_s16le')
+          } else {
+            cmd.audioCodec('libmp3lame').audioBitrate(settings.audioBitrate || '192k')
+          }
+        } else {
+          cmd.outputOptions(['-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '24'])
+        }
+      }
 
       cmd
         .output(outPath)
@@ -242,10 +235,11 @@ export async function processMediaEnhancement(
             if (fs.existsSync(tempInputPath)) fs.unlinkSync(tempInputPath)
           } catch {}
 
-          if (!fs.existsSync(outPath)) {
+          if (!fs.existsSync(outPath) || fs.statSync(outPath).size === 0) {
             cleanup()
-            return reject(new Error('Enhancement output file was not created.'))
+            return reject(new Error('Clip extraction failed to generate output.'))
           }
+
           resolve({
             filePath: outPath,
             fileName,
@@ -262,6 +256,7 @@ export async function processMediaEnhancement(
 
       cmd.run()
     } catch (err: any) {
+      clearTimeout(timeoutTimer)
       cleanup()
       reject(err)
     }

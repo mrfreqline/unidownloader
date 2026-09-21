@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import {
   Scissors,
   Sliders,
@@ -35,7 +35,7 @@ function formatTime(seconds: number): string {
   if (isNaN(seconds) || seconds < 0) return '00:00'
   const h = Math.floor(seconds / 3600)
   const m = Math.floor((seconds % 3600) / 60)
-  const s = seconds % 60
+  const s = Math.floor(seconds % 60)
   if (h > 0) {
     return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
   }
@@ -48,8 +48,15 @@ export default function MediaEnhancer({
   settings,
   onChange,
 }: MediaEnhancerProps) {
-  const [isExpanded, setIsExpanded] = useState(false)
-  const maxDuration = durationSeconds > 0 ? durationSeconds : 300
+  const [isExpanded, setIsExpanded] = useState(settings.enabled || settings.trimEnabled || false)
+
+  useEffect(() => {
+    if (settings.trimEnabled || settings.enabled) {
+      setIsExpanded(true)
+    }
+  }, [settings.trimEnabled, settings.enabled])
+
+  const maxDuration = durationSeconds > 0 ? durationSeconds : 600
 
   const updateSetting = <K extends keyof EnhancementSettings>(
     key: K,
@@ -148,63 +155,189 @@ export default function MediaEnhancer({
             </button>
           </div>
 
-          {/* 1. Precision Trimming */}
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <label className="text-xs font-semibold text-zinc-800 dark:text-zinc-200 flex items-center gap-1.5">
-                <Scissors className="w-3.5 h-3.5 text-zinc-500" />
-                Trim Clip Range
-              </label>
-              <div className="flex items-center gap-1.5 text-[11px] sm:text-xs font-mono">
-                <span className="px-1.5 py-0.5 rounded-md bg-zinc-200/80 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300">
-                  {formatTime(settings.trimStart)}
+          {/* 1. Precision Trimming (Max 60 Seconds anywhere across the full video) */}
+          <div className="space-y-3 p-3.5 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <div className="flex items-center gap-1.5">
+                <Scissors className="w-4 h-4 text-blue-500" />
+                <span className="text-xs font-bold text-zinc-900 dark:text-zinc-100">
+                  Select 60s Clip From Entire Video
                 </span>
-                <span className="text-zinc-400">→</span>
-                <span className="px-1.5 py-0.5 rounded-md bg-zinc-200/80 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300">
-                  {formatTime(settings.trimEnd)}
+                <span className="px-1.5 py-0.5 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 text-[10px] font-mono font-medium">
+                  Max 60s
+                </span>
+              </div>
+
+              {/* Total Duration and Clip Tag */}
+              <div className="flex items-center gap-2 text-[11px] font-mono">
+                <span className="text-zinc-400">Total: {formatTime(maxDuration)}</span>
+                <span className="px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-bold">
+                  Clip: {formatTime(Math.max(1, settings.trimEnd - settings.trimStart))}
                 </span>
               </div>
             </div>
 
-            {/* Sliders with touch area */}
-            <div className="space-y-2 pt-1">
-              <div className="flex items-center gap-2 sm:gap-3">
-                <span className="text-[10px] font-mono text-zinc-400 w-8">Start:</span>
-                <input
-                  type="range"
-                  min={0}
-                  max={maxDuration}
-                  step={1}
-                  value={settings.trimStart}
-                  onChange={e => {
-                    const val = Number(e.target.value)
-                    if (val < settings.trimEnd) {
-                      updateSetting('trimStart', val)
-                      updateSetting('trimEnabled', true)
-                    }
-                  }}
-                  className="flex-1 h-2 bg-zinc-200 dark:bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-zinc-900 dark:accent-zinc-100 touch-pan-x"
-                />
-              </div>
+            {/* Quick 1-Tap Presets */}
+            <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
+              <span className="text-[10px] text-zinc-400 font-medium">Quick Presets:</span>
+              <button
+                type="button"
+                onClick={() => {
+                  const duration = 30
+                  const end = Math.min(maxDuration, settings.trimStart + duration)
+                  onChange({
+                    ...settings,
+                    trimStart: settings.trimStart,
+                    trimEnd: end,
+                    trimEnabled: true,
+                    enabled: true,
+                    targetFormat: 'mp3',
+                  })
+                }}
+                className={`px-2.5 py-1 rounded-md text-[11px] font-medium border transition cursor-pointer touch-manipulation flex items-center gap-1 ${
+                  settings.trimEnabled && (settings.trimEnd - settings.trimStart) === 30 && settings.targetFormat === 'mp3'
+                    ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 shadow-xs'
+                    : 'border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 text-zinc-600 dark:text-zinc-400'
+                }`}
+              >
+                🎵 30s Ringtone (MP3)
+              </button>
 
-              <div className="flex items-center gap-2 sm:gap-3">
-                <span className="text-[10px] font-mono text-zinc-400 w-8">End:</span>
-                <input
-                  type="range"
-                  min={0}
-                  max={maxDuration}
-                  step={1}
-                  value={settings.trimEnd}
-                  onChange={e => {
-                    const val = Number(e.target.value)
-                    if (val > settings.trimStart) {
-                      updateSetting('trimEnd', val)
-                      updateSetting('trimEnabled', true)
-                    }
-                  }}
-                  className="flex-1 h-2 bg-zinc-200 dark:bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-zinc-900 dark:accent-zinc-100 touch-pan-x"
-                />
+              <button
+                type="button"
+                onClick={() => {
+                  const duration = 60
+                  const end = Math.min(maxDuration, settings.trimStart + duration)
+                  onChange({
+                    ...settings,
+                    trimStart: settings.trimStart,
+                    trimEnd: end,
+                    trimEnabled: true,
+                    enabled: true,
+                    targetFormat: mediaType === 'audio' ? 'mp3' : 'mp4',
+                  })
+                }}
+                className={`px-2.5 py-1 rounded-md text-[11px] font-medium border transition cursor-pointer touch-manipulation flex items-center gap-1 ${
+                  settings.trimEnabled && (settings.trimEnd - settings.trimStart) === 60
+                    ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 shadow-xs'
+                    : 'border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 text-zinc-600 dark:text-zinc-400'
+                }`}
+              >
+                📱 60s Clip / Status
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  const currentDuration = Math.min(60, Math.max(1, settings.trimEnd - settings.trimStart))
+                  onChange({
+                    ...settings,
+                    trimStart: 0,
+                    trimEnd: Math.min(maxDuration, currentDuration),
+                    trimEnabled: true,
+                    enabled: true,
+                  })
+                }}
+                className="px-2 py-1 rounded-md text-[11px] font-medium border border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 text-zinc-500 transition cursor-pointer touch-manipulation"
+              >
+                ⏪ Reset to 00:00
+              </button>
+            </div>
+
+            {/* Slider 1: Start Position across the FULL video */}
+            <div className="space-y-1 pt-1">
+              <div className="flex items-center justify-between text-[11px]">
+                <span className="font-semibold text-zinc-700 dark:text-zinc-300 flex items-center gap-1">
+                  <span>1. Start Position in Video:</span>
+                  <span className="font-mono text-blue-600 dark:text-blue-400 font-bold bg-blue-50 dark:bg-blue-950/50 px-1.5 py-0.5 rounded">
+                    {formatTime(settings.trimStart)}
+                  </span>
+                </span>
+                <span className="text-[10px] font-mono text-zinc-400">
+                  End of video: {formatTime(maxDuration)}
+                </span>
               </div>
+              <input
+                type="range"
+                min={0}
+                max={Math.max(0, maxDuration - 1)}
+                step={1}
+                value={settings.trimStart}
+                onChange={e => {
+                  const newStart = Number(e.target.value)
+                  const currentLen = Math.min(60, Math.max(1, settings.trimEnd - settings.trimStart))
+                  // Slide the window automatically so the clip length is maintained!
+                  const newEnd = Math.min(maxDuration, newStart + currentLen)
+                  onChange({
+                    ...settings,
+                    trimStart: newStart,
+                    trimEnd: newEnd,
+                    trimEnabled: true,
+                    enabled: true,
+                  })
+                }}
+                className="w-full h-2.5 bg-zinc-200 dark:bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-blue-600 dark:accent-blue-500 touch-pan-x"
+              />
+              <div className="flex justify-between text-[9px] font-mono text-zinc-400">
+                <span>00:00</span>
+                <span>{formatTime(Math.floor(maxDuration / 2))}</span>
+                <span>{formatTime(maxDuration)}</span>
+              </div>
+            </div>
+
+            {/* Slider 2: Clip Length (between 1s and 60s) */}
+            <div className="space-y-1 pt-1 border-t border-zinc-100 dark:border-zinc-800">
+              <div className="flex items-center justify-between text-[11px]">
+                <span className="font-semibold text-zinc-700 dark:text-zinc-300 flex items-center gap-1">
+                  <span>2. Clip Length:</span>
+                  <span className="font-mono text-emerald-600 dark:text-emerald-400 font-bold bg-emerald-50 dark:bg-emerald-950/50 px-1.5 py-0.5 rounded">
+                    {Math.round(Math.max(1, settings.trimEnd - settings.trimStart))} seconds
+                  </span>
+                </span>
+                <span className="text-[10px] font-mono text-zinc-400">
+                  Cut: {formatTime(settings.trimStart)} → {formatTime(settings.trimEnd)}
+                </span>
+              </div>
+              <input
+                type="range"
+                min={1}
+                max={Math.min(60, Math.max(1, maxDuration - settings.trimStart))}
+                step={1}
+                value={Math.min(60, Math.max(1, settings.trimEnd - settings.trimStart))}
+                onChange={e => {
+                  const newLen = Number(e.target.value)
+                  const newEnd = Math.min(maxDuration, settings.trimStart + newLen)
+                  onChange({
+                    ...settings,
+                    trimEnd: newEnd,
+                    trimEnabled: true,
+                    enabled: true,
+                  })
+                }}
+                className="w-full h-2.5 bg-zinc-200 dark:bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-emerald-600 dark:accent-emerald-500 touch-pan-x"
+              />
+              <div className="flex justify-between text-[9px] font-mono text-zinc-400">
+                <span>1s</span>
+                <span>30s (Ringtone)</span>
+                <span>60s (Max)</span>
+              </div>
+            </div>
+
+            {/* Selected Window Summary Box */}
+            <div className="p-2.5 rounded-lg bg-zinc-50 dark:bg-zinc-850 border border-zinc-200/60 dark:border-zinc-750 flex items-center justify-between flex-wrap gap-2 text-xs">
+              <div className="flex items-center gap-1.5 text-zinc-700 dark:text-zinc-300 font-medium">
+                <span className="text-zinc-400 text-[11px]">Clip Window:</span>
+                <span className="font-mono font-bold text-blue-600 dark:text-blue-400">
+                  {formatTime(settings.trimStart)}
+                </span>
+                <span className="text-zinc-400">➔</span>
+                <span className="font-mono font-bold text-blue-600 dark:text-blue-400">
+                  {formatTime(settings.trimEnd)}
+                </span>
+              </div>
+              <span className="text-[10px] font-mono text-emerald-600 dark:text-emerald-400 font-semibold bg-emerald-500/10 px-2 py-0.5 rounded">
+                Exact {Math.round(settings.trimEnd - settings.trimStart)}s extract
+              </span>
             </div>
           </div>
 

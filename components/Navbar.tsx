@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { Download, Coins, Sun, Moon, Monitor, User, LogOut, Plus, Smartphone } from 'lucide-react'
+import { Download, Coins, Sun, Moon, Monitor, User, LogOut, Plus, Smartphone, Music, Coffee, HelpCircle } from 'lucide-react'
 
 interface NavbarProps {
   tokens: number
@@ -58,6 +58,36 @@ export default function Navbar({
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
             Zero Retention Active
           </div>
+
+          {/* Dedicated Fast MP3 Link */}
+          <Link
+            href="/mp3"
+            className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/25 transition cursor-pointer"
+            title="Dedicated Fast MP3 Downloader"
+          >
+            <Music className="w-3.5 h-3.5 text-emerald-500" />
+            <span>MP3 Fast</span>
+          </Link>
+
+          {/* Support / Buy Us a Coffee Link */}
+          <a
+            href="#donate"
+            className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/25 transition cursor-pointer"
+            title="Buy Us a Coffee (eSewa / Khalti / Bank QR)"
+          >
+            <Coffee className="w-3.5 h-3.5 text-amber-500" />
+            <span>Buy Coffee</span>
+          </a>
+
+          {/* FAQ Link */}
+          <a
+            href="/#faq"
+            className="hidden md:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-zinc-100 dark:bg-zinc-900 hover:bg-zinc-200 dark:hover:bg-zinc-850 text-zinc-700 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-800 transition cursor-pointer"
+            title="Frequently Asked Questions"
+          >
+            <HelpCircle className="w-3.5 h-3.5 text-emerald-500" />
+            <span>FAQ</span>
+          </a>
         </div>
 
         {/* Right Actions: Compact & Touch-friendly for Mobile */}

@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import Link from 'next/link'
 import Navbar from '@/components/Navbar'
 import TokenModal from '@/components/TokenModal'
 import AuthPromptModal from '@/components/AuthPromptModal'
@@ -15,6 +16,7 @@ import InSiteAdPopup from '@/components/InSiteAdPopup'
 import PwaInstallPrompt from '@/components/PwaInstallPrompt'
 import AppDownloadModal from '@/components/AppDownloadModal'
 import SeoContent from '@/components/SeoContent'
+import DonationSection from '@/components/DonationSection'
 import { FolderResult } from '@/lib/downloader/terabox-resolver'
 import {
   Link2,
@@ -413,11 +415,18 @@ export default function Home() {
           setFolderData(data.folderData)
         }
 
+        let totalSecs = data.durationSeconds
+        if (!totalSecs && data.duration) {
+          const parts = String(data.duration).split(':').map(Number)
+          if (parts.length === 2 && !parts.some(isNaN)) totalSecs = parts[0] * 60 + parts[1]
+          else if (parts.length === 3 && !parts.some(isNaN)) totalSecs = parts[0] * 3600 + parts[1] * 60 + parts[2]
+        }
+
         setAnalyzedMedia({
           title: data.title || 'Extracted Media Stream',
           thumbnail: data.thumbnail || '',
           duration: data.duration,
-          durationSeconds: data.durationSeconds || 180,
+          durationSeconds: totalSecs && totalSecs > 0 ? totalSecs : 600,
           uploader: data.uploader,
           platform: data.platform || 'Direct Media',
           originalUrl: trimmed,
@@ -462,6 +471,11 @@ export default function Home() {
     setIsDownloading(true)
     setError('')
     setDownloadSuccessMsg(null)
+
+    // Smoothly auto-scroll up so the user clearly sees the progress bar & download status
+    if (typeof window !== 'undefined') {
+      window.scrollTo({ top: 120, behavior: 'smooth' })
+    }
 
     try {
       const origin = typeof window !== 'undefined' ? window.location.origin : ''
@@ -556,25 +570,20 @@ export default function Home() {
           const filename = data.filename || defaultFilename
           setDirectDownloadLink({ url: data.redirectUrl, filename })
 
-          // Trigger native browser download directly into Downloads folder without popup blockers or window navigation locks
+          // Trigger native browser save directly into Downloads folder using blob URL
           try {
-            let dlFrame = document.getElementById('a2z-download-frame') as HTMLIFrameElement
-            if (!dlFrame) {
-              dlFrame = document.createElement('iframe')
-              dlFrame.id = 'a2z-download-frame'
-              dlFrame.name = 'a2z-download-frame'
-              dlFrame.style.display = 'none'
-              document.body.appendChild(dlFrame)
-            }
+            const blobRes = await fetch(data.redirectUrl)
+            const blobData = await blobRes.blob()
+            const blobUrl = window.URL.createObjectURL(blobData)
             const a = document.createElement('a')
-            a.href = data.redirectUrl
+            a.href = blobUrl
             a.download = filename
-            a.target = 'a2z-download-frame'
             document.body.appendChild(a)
             a.click()
             setTimeout(() => {
+              window.URL.revokeObjectURL(blobUrl)
               try { document.body.removeChild(a) } catch {}
-            }, 500)
+            }, 1000)
           } catch {
             const a = document.createElement('a')
             a.href = data.redirectUrl
@@ -583,7 +592,7 @@ export default function Home() {
             a.click()
             setTimeout(() => {
               try { document.body.removeChild(a) } catch {}
-            }, 500)
+            }, 1000)
           }
 
           if (mediaType === 'video') {
@@ -813,10 +822,19 @@ export default function Home() {
               </span>
             </div>
 
-            <div className="text-zinc-500">
-              <span className="text-emerald-600 dark:text-emerald-400 font-medium">
+            <div className="flex items-center gap-2">
+              <span className="text-emerald-600 dark:text-emerald-400 font-medium hidden xs:inline">
                 Free Worldwide Access
               </span>
+              <Link
+                href="/mp3"
+                className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] sm:text-[11px] font-bold bg-gradient-to-r from-emerald-500/15 via-teal-500/10 to-cyan-500/15 hover:from-emerald-500/25 hover:to-cyan-500/25 text-emerald-600 dark:text-emerald-400 border border-emerald-500/35 transition shadow-xs cursor-pointer group"
+                title="Open Dedicated Fast MP3 Downloader"
+              >
+                <Zap className="w-3 h-3 text-emerald-500 fill-current" />
+                <span>Download MP3 Fast Here</span>
+                <span className="group-hover:translate-x-0.5 transition-transform text-xs">↗</span>
+              </Link>
             </div>
           </div>
         </div>
@@ -977,6 +995,9 @@ export default function Home() {
           </div>
         </div>
 
+        {/* Donation / Buy Us a Coffee Section */}
+        <DonationSection />
+
         {/* SEO Informational & FAQ Section */}
         <SeoContent />
 
@@ -996,6 +1017,13 @@ export default function Home() {
             <span>A2Z Downloader • Download Media. Simple & Fast.</span>
           </div>
           <div className="flex items-center gap-4 text-[11px]">
+            <a
+              href="#donate"
+              className="text-amber-600 dark:text-amber-400 font-semibold hover:underline flex items-center gap-1 transition"
+            >
+              ☕ Buy Us a Coffee
+            </a>
+            <span>•</span>
             <button
               onClick={() => setIsTokenModalOpen(true)}
               className="hover:text-zinc-900 dark:hover:text-zinc-100 transition touch-manipulation cursor-pointer"

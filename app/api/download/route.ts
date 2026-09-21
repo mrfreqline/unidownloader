@@ -55,8 +55,19 @@ export async function POST(req: NextRequest) {
         const fileBuffer = fs.readFileSync(enhanced.filePath)
         enhanced.cleanup()
 
-        // Upload enhanced media to high-speed Supabase ephemeral CDN
-        // This completely overcomes Vercel's 4.5MB serverless payload limit & timeout constraints
+        // Direct stream trimmed clip or ringtone directly (< 25MB) so browser saves immediately to disk
+        if (fileBuffer.length < 25 * 1024 * 1024 || (!process.env.NEXT_PUBLIC_SUPABASE_URL)) {
+          const responseHeaders = new Headers()
+          responseHeaders.set('Content-Type', enhanced.contentType)
+          responseHeaders.set('Content-Disposition', `attachment; filename="${enhanced.fileName}"`)
+          responseHeaders.set('Content-Length', fileBuffer.length.toString())
+
+          return new NextResponse(fileBuffer, {
+            headers: responseHeaders,
+          })
+        }
+
+        // Upload large files (> 25MB) to Supabase ephemeral storage
         const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
         const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
@@ -92,22 +103,15 @@ export async function POST(req: NextRequest) {
           }
         }
 
-        // Direct stream fallback for smaller files (< 4.2MB)
-        if (fileBuffer.length < 4.2 * 1024 * 1024) {
-          const responseHeaders = new Headers()
-          responseHeaders.set('Content-Type', enhanced.contentType)
-          responseHeaders.set('Content-Disposition', `attachment; filename="${enhanced.fileName}"`)
-          responseHeaders.set('Content-Length', fileBuffer.length.toString())
+        // Direct stream trimmed clip or ringtone to the user's browser
+        const responseHeaders = new Headers()
+        responseHeaders.set('Content-Type', enhanced.contentType)
+        responseHeaders.set('Content-Disposition', `attachment; filename="${enhanced.fileName}"`)
+        responseHeaders.set('Content-Length', fileBuffer.length.toString())
 
-          return new NextResponse(fileBuffer, {
-            headers: responseHeaders,
-          })
-        }
-
-        return NextResponse.json(
-          { error: 'Enhanced media file exceeded serverless transmission limits. Please select a shorter duration or balanced compression.' },
-          { status: 500 }
-        )
+        return new NextResponse(fileBuffer, {
+          headers: responseHeaders,
+        })
       } catch (enhErr: any) {
         console.error('[Enhancement Processing Error]:', enhErr?.message || enhErr)
         return NextResponse.json(

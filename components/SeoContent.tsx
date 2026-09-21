@@ -101,7 +101,7 @@ export default function SeoContent() {
       </div>
 
       {/* SEO FAQ Accordion */}
-      <div className="space-y-2">
+      <div id="faq" className="space-y-2 scroll-mt-20">
         <div className="flex items-center gap-1.5 px-1 text-xs font-semibold text-zinc-700 dark:text-zinc-300">
           <HelpCircle className="w-3.5 h-3.5 text-emerald-500" />
           <span>Frequently Asked Questions</span>
