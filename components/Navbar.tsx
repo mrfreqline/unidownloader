@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { Download, Coins, Sun, Moon, Monitor, User, LogOut, Plus, Smartphone, Music, Coffee, HelpCircle } from 'lucide-react'
+import { Download, Coins, Sun, Moon, Monitor, User, LogOut, Plus, Smartphone, Music, Coffee, HelpCircle, Eye } from 'lucide-react'
 
 interface NavbarProps {
   tokens: number
@@ -67,6 +67,16 @@ export default function Navbar({
           >
             <Music className="w-3.5 h-3.5 text-emerald-500" />
             <span>MP3 Fast</span>
+          </Link>
+
+          {/* Anonymous Viewer Link */}
+          <Link
+            href="/anonymous-viewer"
+            className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-violet-500/10 hover:bg-violet-500/20 text-violet-600 dark:text-violet-400 border border-violet-500/25 transition cursor-pointer"
+            title="Anonymous Profile & Story Viewer (Instagram, TikTok, FB, Snapchat)"
+          >
+            <Eye className="w-3.5 h-3.5 text-violet-500" />
+            <span>Anonymous Viewer</span>
           </Link>
 
           {/* Support / Buy Us a Coffee Link */}
@@ -195,6 +205,14 @@ export default function Navbar({
         >
           <Music className="w-3 h-3 text-emerald-500" />
           <span>MP3 Fast</span>
+        </Link>
+
+        <Link
+          href="/anonymous-viewer"
+          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-violet-500/10 hover:bg-violet-500/20 text-violet-600 dark:text-violet-400 border border-violet-500/25 transition shrink-0"
+        >
+          <Eye className="w-3 h-3 text-violet-500" />
+          <span>Viewer</span>
         </Link>
 
         <a

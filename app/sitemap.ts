@@ -15,6 +15,12 @@ export default function sitemap(): MetadataRoute.Sitemap {
       priority: 0.9,
     },
     {
+      url: 'https://a2zdownloader.vercel.app/anonymous-viewer',
+      lastModified: new Date(),
+      changeFrequency: 'daily',
+      priority: 0.95,
+    },
+    {
       url: 'https://a2zdownloader.vercel.app/pricing',
       lastModified: new Date(),
       changeFrequency: 'weekly',

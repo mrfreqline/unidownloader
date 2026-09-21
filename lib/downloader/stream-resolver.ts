@@ -409,6 +409,155 @@ export async function resolveInstagram(url: string): Promise<StreamResult | null
   const shortcodeMatch = cleanUrl.match(/(?:reel|reels|p|tv)\/([a-zA-Z0-9_-]+)/)
   const shortcode = shortcodeMatch ? shortcodeMatch[1] : null
 
+  // Profile URL detection (e.g. instagram.com/mr.freakline or instagram.com/leomessi)
+  if (!shortcode) {
+    const profileMatch = cleanUrl.match(/(?:instagram\.com\/|^@)([a-zA-Z0-9_.]+)\/?$/i)
+    if (profileMatch && !['p', 'reel', 'reels', 'tv', 'stories', 'explore', 'direct'].includes(profileMatch[1].toLowerCase())) {
+      const username = profileMatch[1]
+      try {
+        const res = await fetch(`https://www.instagram.com/${username}/`, {
+          headers: {
+            'User-Agent': 'WhatsApp/2.21.12.21 A',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          },
+          signal: AbortSignal.timeout(6500),
+        })
+
+        if (res.ok) {
+          const html = await res.text()
+          const ogTitleMatch = html.match(/<meta\s+property=["']og:title["']\s+content=["']([^"']+)["']/i)
+          const ogImageMatch = html.match(/<meta\s+property=["']og:image["']\s+content=["']([^"']+)["']/i)
+          const ogDescMatch = html.match(/<meta\s+property=["']og:description["']\s+content=["']([^"']+)["']/i)
+
+          if (ogImageMatch && ogImageMatch[1]) {
+            const avatarUrl = ogImageMatch[1].replace(/&amp;/g, '&')
+            const rawTitle = ogTitleMatch ? ogTitleMatch[1].replace(/&#064;/g, '@').replace(/&#x2022;/g, '•') : `@${username}`
+            const nameMatch = rawTitle.match(/^([^(•]+)/)
+            const displayName = nameMatch ? nameMatch[1].trim() : username
+
+            return {
+              title: `${displayName} (@${username}) – Instagram Profile HD Avatar`,
+              platform: 'Instagram',
+              thumbnail: avatarUrl,
+              uploader: `@${username}`,
+              qualities: ['Original HD Avatar (1080p)', 'Standard JPEG'],
+              streamUrl: avatarUrl,
+              downloadUrl: avatarUrl,
+              fileType: 'image',
+              images: [{ url: avatarUrl, thumbnail: avatarUrl, title: `${displayName} Avatar` }],
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('[Instagram Profile Stream Resolver warn]:', e)
+      }
+    }
+  }
+
+  // Tier 0: Direct Instagram Embedded Scraper (Googlebot UA - original uncompressed CDN)
+  try {
+    const directRes = await fetch(cleanUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9',
+      },
+      signal: AbortSignal.timeout(6500),
+    })
+
+    if (directRes.ok) {
+      const html = await directRes.text()
+      const scriptRegex = /<script type="application\/json"[^>]*>([\s\S]*?)<\/script>/gi
+      let match
+      let mediaNode: any = null
+
+      while ((match = scriptRegex.exec(html)) !== null) {
+        const content = match[1]
+        if (content.includes('carousel_media') || content.includes('xig_polaris_media') || content.includes('xdt_shortcode_media')) {
+          try {
+            const json = JSON.parse(content)
+            const findMedia = (obj: any) => {
+              if (!obj || typeof obj !== 'object') return
+              if (obj.carousel_media || (obj.image_versions2 && obj.user)) {
+                mediaNode = obj
+                return
+              }
+              if (Array.isArray(obj)) {
+                for (const it of obj) {
+                  if (mediaNode) return
+                  findMedia(it)
+                }
+              } else {
+                for (const k of Object.keys(obj)) {
+                  if (mediaNode) return
+                  findMedia(obj[k])
+                }
+              }
+            }
+            findMedia(json)
+            if (mediaNode) break
+          } catch {}
+        }
+      }
+
+      if (mediaNode) {
+        const rawCarousel = mediaNode.carousel_media || mediaNode.edge_sidecar_to_children?.edges
+        const images: Array<{ url: string; thumbnail?: string; title?: string }> = []
+
+        if (rawCarousel && Array.isArray(rawCarousel) && rawCarousel.length > 0) {
+          rawCarousel.forEach((it: any, idx: number) => {
+            const n = it.node || it
+            const candidates = n.image_versions2?.candidates || []
+            const fullUrl = candidates[0]?.url || n.display_uri || n.display_url || ''
+            const thumbUrl = candidates.find((c: any) => c.width >= 300 && c.width <= 640)?.url || n.display_uri || fullUrl
+            if (fullUrl) {
+              images.push({
+                url: fullUrl,
+                thumbnail: thumbUrl,
+                title: `Photo ${idx + 1}`,
+              })
+            }
+          })
+        }
+
+        const isVideo = isReelUrl || mediaNode.media_type === 2 || (mediaNode.video_versions && mediaNode.video_versions.length > 0)
+        const videoUrl = (mediaNode.video_versions && mediaNode.video_versions[0]?.url) || ''
+        const candidates = mediaNode.image_versions2?.candidates || []
+        const primaryImg = candidates[0]?.url || mediaNode.display_uri || (images[0]?.url) || ''
+
+        if (isVideo && videoUrl) {
+          return {
+            title: mediaNode.caption?.text?.slice(0, 70) || (isReelUrl ? `Instagram Reel (${shortcode || 'Video'})` : `Instagram Video (${shortcode || 'Post'})`),
+            platform: 'Instagram',
+            thumbnail: primaryImg || videoUrl,
+            uploader: mediaNode.user?.full_name || mediaNode.user?.username || 'Instagram Creator',
+            qualities: ['1080p Full HD', '720p HD', 'Audio MP3'],
+            streamUrl: videoUrl,
+            downloadUrl: videoUrl,
+            audioUrl: videoUrl,
+            fileType: 'video',
+          }
+        }
+
+        if (images.length > 0) {
+          return {
+            title: images.length > 1 ? `Instagram Photos (${images.length} Images)` : (mediaNode.caption?.text?.slice(0, 70) || `Instagram Photo (${shortcode || 'Post'})`),
+            platform: 'Instagram',
+            thumbnail: images[0].thumbnail || images[0].url,
+            uploader: mediaNode.user?.full_name || mediaNode.user?.username || 'Instagram Creator',
+            qualities: ['Original HD Image', 'Standard JPEG'],
+            streamUrl: images[0].url,
+            downloadUrl: images[0].url,
+            fileType: 'image',
+            images: images.length > 1 ? images : undefined,
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('[Instagram Direct Scraper in stream-resolver warn]:', err)
+  }
+
   // Tier 1: snapsave-media-downloader (SnapSave / SnapInsta High-Speed Engine)
   try {
     const snapMod = await import('snapsave-media-downloader')

@@ -155,9 +155,10 @@ export default function MediaCard({
         <div className="relative w-full sm:w-48 aspect-video sm:aspect-auto sm:h-28 rounded-xl overflow-hidden bg-zinc-100 dark:bg-zinc-900 shrink-0 border border-zinc-200 dark:border-zinc-800 flex items-center justify-center">
           {media.thumbnail ? (
             <img
-              src={media.thumbnail}
+              src={`/api/thumbnail?url=${encodeURIComponent(media.thumbnail)}`}
               alt={media.title}
               className="w-full h-full object-cover"
+              referrerPolicy="no-referrer"
             />
           ) : (
             <div className="flex flex-col items-center justify-center text-zinc-400 gap-1.5 p-4">
@@ -261,7 +262,7 @@ export default function MediaCard({
       {/* Tabs: Video, Watch/Stream, Audio, Cover */}
       <div className="flex rounded-xl bg-zinc-100 dark:bg-zinc-900 p-1 border border-zinc-200 dark:border-zinc-800 text-[11px] sm:text-xs font-medium">
         {/* Watch Movie Tab */}
-        {hasPlayableStream && (
+        {media.fileType !== 'image' && hasPlayableStream && (
           <button
             type="button"
             onClick={() => {
@@ -477,10 +478,11 @@ export default function MediaCard({
               >
                 <div className="relative aspect-square w-full bg-zinc-100 dark:bg-zinc-800 overflow-hidden">
                   <img
-                    src={img.thumbnail || img.url}
+                    src={`/api/thumbnail?url=${encodeURIComponent(img.thumbnail || img.url)}`}
                     alt={img.title || `Photo ${idx + 1}`}
                     className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
                     loading="lazy"
+                    referrerPolicy="no-referrer"
                   />
                   <span className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded-md bg-black/70 backdrop-blur-xs text-white text-[10px] font-mono font-bold">
                     #{idx + 1}

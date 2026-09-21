@@ -69,3 +69,44 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Failed to download image.' }, { status: 500 })
   }
 }
+
+export async function GET(req: NextRequest) {
+  try {
+    const { searchParams } = new URL(req.url)
+    const targetUrl = searchParams.get('url')
+    if (!targetUrl) {
+      return new NextResponse('Missing url parameter', { status: 400 })
+    }
+
+    const response = await fetch(targetUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+        'Referer': targetUrl.includes('instagram.com')
+          ? 'https://www.instagram.com/'
+          : targetUrl.includes('tiktok.com')
+          ? 'https://www.tiktok.com/'
+          : targetUrl.includes('facebook.com')
+          ? 'https://www.facebook.com/'
+          : '',
+      },
+      signal: AbortSignal.timeout(7000),
+    }).catch(() => null)
+
+    if (!response || !response.ok) {
+      return NextResponse.redirect(targetUrl)
+    }
+
+    const contentType = response.headers.get('content-type') || 'image/jpeg'
+    const buffer = Buffer.from(await response.arrayBuffer())
+
+    return new NextResponse(buffer, {
+      headers: {
+        'Content-Type': contentType,
+        'Cache-Control': 'public, max-age=86400, stale-while-revalidate=43200',
+      },
+    })
+  } catch {
+    return new NextResponse('Image proxy error', { status: 500 })
+  }
+}
