@@ -254,7 +254,7 @@ export default function Mp3Page() {
             {/* FAQ Link */}
             <a
               href="#faq"
-              className="hidden md:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-zinc-100 dark:bg-zinc-900 hover:bg-zinc-200 dark:hover:bg-zinc-850 text-zinc-700 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-800 transition cursor-pointer"
+              className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-zinc-100 dark:bg-zinc-900 hover:bg-zinc-200 dark:hover:bg-zinc-850 text-zinc-700 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-800 transition cursor-pointer"
               title="Frequently Asked Questions"
             >
               <HelpCircle className="w-3.5 h-3.5 text-emerald-500" />
@@ -300,6 +300,38 @@ export default function Mp3Page() {
                 <Moon className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
               </button>
             </div>
+          </div>
+        </div>
+
+        {/* Mobile Quick-Navigation Strip (<sm) */}
+        <div className="sm:hidden border-t border-zinc-200/70 dark:border-zinc-800/80 bg-zinc-50/95 dark:bg-zinc-950/95 backdrop-blur-md px-3 py-1.5 flex items-center justify-between gap-1.5 overflow-x-auto no-scrollbar text-[11px] font-medium">
+          <Link
+            href="/"
+            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-zinc-200/70 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 border border-zinc-300/70 dark:border-zinc-800 transition shrink-0"
+          >
+            <ArrowLeft className="w-3 h-3 text-zinc-400" />
+            <span>All Media</span>
+          </Link>
+
+          <a
+            href="#donate"
+            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/25 transition shrink-0"
+          >
+            <Coffee className="w-3 h-3 text-amber-500" />
+            <span>Buy Coffee</span>
+          </a>
+
+          <a
+            href="#faq"
+            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-zinc-200/70 dark:bg-zinc-900 hover:bg-zinc-300/70 dark:hover:bg-zinc-850 text-zinc-700 dark:text-zinc-300 border border-zinc-300/70 dark:border-zinc-800 transition shrink-0"
+          >
+            <HelpCircle className="w-3 h-3 text-emerald-500" />
+            <span>FAQ</span>
+          </a>
+
+          <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-mono text-emerald-600 dark:text-emerald-400 shrink-0">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+            <span>320k Studio</span>
           </div>
         </div>
       </header>

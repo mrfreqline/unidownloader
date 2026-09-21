@@ -82,7 +82,7 @@ export default function Navbar({
           {/* FAQ Link */}
           <a
             href="/#faq"
-            className="hidden md:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-zinc-100 dark:bg-zinc-900 hover:bg-zinc-200 dark:hover:bg-zinc-850 text-zinc-700 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-800 transition cursor-pointer"
+            className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-zinc-100 dark:bg-zinc-900 hover:bg-zinc-200 dark:hover:bg-zinc-850 text-zinc-700 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-800 transition cursor-pointer"
             title="Frequently Asked Questions"
           >
             <HelpCircle className="w-3.5 h-3.5 text-emerald-500" />
@@ -184,6 +184,38 @@ export default function Navbar({
             </button>
           )}
 
+        </div>
+      </div>
+
+      {/* Mobile Quick-Navigation Strip (<sm): Always visible on smartphones */}
+      <div className="sm:hidden border-t border-zinc-200/70 dark:border-zinc-800/80 bg-zinc-50/95 dark:bg-zinc-950/95 backdrop-blur-md px-3 py-1.5 flex items-center justify-between gap-1.5 overflow-x-auto no-scrollbar text-[11px] font-medium">
+        <Link
+          href="/mp3"
+          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/25 transition shrink-0"
+        >
+          <Music className="w-3 h-3 text-emerald-500" />
+          <span>MP3 Fast</span>
+        </Link>
+
+        <a
+          href="#donate"
+          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/25 transition shrink-0"
+        >
+          <Coffee className="w-3 h-3 text-amber-500" />
+          <span>Buy Coffee</span>
+        </a>
+
+        <a
+          href="/#faq"
+          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-zinc-200/70 dark:bg-zinc-900 hover:bg-zinc-300/70 dark:hover:bg-zinc-850 text-zinc-700 dark:text-zinc-300 border border-zinc-300/70 dark:border-zinc-800 transition shrink-0"
+        >
+          <HelpCircle className="w-3 h-3 text-emerald-500" />
+          <span>FAQ</span>
+        </a>
+
+        <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-mono text-zinc-500 dark:text-zinc-400 shrink-0">
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+          <span>Zero Retention</span>
         </div>
       </div>
     </header>
