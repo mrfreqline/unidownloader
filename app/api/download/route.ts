@@ -147,7 +147,9 @@ export async function POST(req: NextRequest) {
         targetDownloadUrl.includes('tikwm') ||
         targetDownloadUrl.includes('fxtwitter') ||
         targetDownloadUrl.includes('pbcshsnp.com') ||
-        targetDownloadUrl.includes('cshsnpcwio')
+        targetDownloadUrl.includes('cshsnpcwio') ||
+        targetDownloadUrl.includes('rapidcdn.app') ||
+        targetDownloadUrl.includes('snapxcdn.com')
       )
 
     if (isDirectCdn) {
@@ -155,11 +157,17 @@ export async function POST(req: NextRequest) {
     }
 
     try {
+      const isIgCdn =
+        targetDownloadUrl.includes('cdninstagram.com') ||
+        targetDownloadUrl.includes('fbcdn.net') ||
+        targetDownloadUrl.includes('instagram.com')
       const remoteRes = await fetch(targetDownloadUrl, {
         headers: {
           'User-Agent':
             'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          ...(isIgCdn ? { Referer: 'https://www.instagram.com/', Origin: 'https://www.instagram.com' } : {}),
         },
+        signal: AbortSignal.timeout(20000),
       })
 
       if (!remoteRes.ok || !remoteRes.body) {

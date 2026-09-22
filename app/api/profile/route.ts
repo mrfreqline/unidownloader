@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { extractUrlFromToken, resolveMediaUrl, withTimeout } from '@/lib/downloader/stream-resolver'
 
 export interface CarouselMediaItem {
   id: string
@@ -94,11 +95,7 @@ export function parseAndBuildAutoUrl(rawInput: string, defaultPlatform?: string)
       else if (host.includes('instagram.com') || host.includes('instagr.am')) platform = 'instagram'
       else if (defaultPlatform) platform = defaultPlatform as any
 
-      const isDirectMedia =
-        /(?:reel|reels|p|tv)\/([a-zA-Z0-9_-]+)/i.test(trimmed) ||
-        /\/stories\/[a-zA-Z0-9_.]+\/(\d+)/i.test(trimmed) ||
-        /\/video\/\d+/i.test(trimmed) ||
-        /snapchat\.com\/.*(?:spotlight|stories)/i.test(trimmed)
+      const isDirectMedia = isPublicMediaUrl(trimmed)
 
       const username = sanitizeUsername(trimmed, platform)
 
@@ -151,6 +148,59 @@ export function parseAndBuildAutoUrl(rawInput: string, defaultPlatform?: string)
   }
 }
 
+function isPublicMediaUrl(raw: string): boolean {
+  const trimmed = (raw || '').trim()
+  if (!trimmed) return false
+  return (
+    /(?:reel|reels|p|tv)\/([a-zA-Z0-9_-]+)/i.test(trimmed) ||
+    /\/stories\/[a-zA-Z0-9_.]+/i.test(trimmed) ||
+    /\/share\//i.test(trimmed) ||
+    /instagram\.com\/s\/[a-zA-Z0-9_-]+/i.test(trimmed) ||
+    /\/video\/\d+/i.test(trimmed) ||
+    /tiktok\.com\/@[^/]+\/video\/\d+/i.test(trimmed) ||
+    /snapchat\.com\/.*(?:spotlight|stories)/i.test(trimmed) ||
+    /facebook\.com\/(?:reel|watch|share)/i.test(trimmed) ||
+    /fb\.watch\//i.test(trimmed)
+  )
+}
+
+function looksLikeLoginWall(html: string): boolean {
+  if (!html) return false
+  const lower = html.toLowerCase()
+  const hasOg = lower.includes('og:title') || lower.includes('og:image')
+  const loginHeavy =
+    lower.includes('accounts/login') ||
+    lower.includes('log in to instagram') ||
+    lower.includes('login_required')
+  return loginHeavy && !hasOg && !lower.includes('polaris_timeline_connection')
+}
+
+function toAnonymousMediaPayload(media: {
+  title: string
+  thumbnail?: string
+  streamUrl?: string
+  downloadUrl: string
+  audioUrl?: string
+  platform: string
+  fileType?: string
+  qualities?: string[]
+  uploader?: string
+  images?: Array<{ url: string; thumbnail?: string; title?: string }>
+}) {
+  return {
+    title: media.title,
+    thumbnail: media.thumbnail || '',
+    streamUrl: media.streamUrl || media.downloadUrl,
+    downloadUrl: media.downloadUrl,
+    audioUrl: media.audioUrl,
+    platform: media.platform,
+    fileType: media.fileType || 'video',
+    qualities: media.qualities,
+    uploader: media.uploader,
+    images: media.images,
+  }
+}
+
 // Clean and extract username from URL or text
 function sanitizeUsername(input: string, platform: string): string {
   let clean = input.trim()
@@ -176,25 +226,12 @@ function sanitizeUsername(input: string, platform: string): string {
   return clean.replace(/^@/, '').replace(/\/$/, '').split('?')[0].trim()
 }
 
-// Decode raw CDN URL from proxy JWT tokens (e.g. RapidCDN / SnapSave)
-function extractUrlFromToken(tokenUrl: string): string {
-  try {
-    const match = tokenUrl.match(/token=([a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+)/)
-    if (!match) return tokenUrl
-    const parts = match[1].split('.')
-    const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString('utf8'))
-    return payload.url || tokenUrl
-  } catch {
-    return tokenUrl
-  }
-}
-
-// Fetch 100% Real Live Uploaded Stories for Instagram Account
+// Fetch public stories for an Instagram account (third-party extractor, hard-capped)
 async function fetchInstagramStories(username: string): Promise<StoryItem[]> {
   try {
     const snapMod = await import('snapsave-media-downloader')
     const fn = (snapMod as any).snapsave || (snapMod as any).default || snapMod
-    const res = await fn(`https://www.instagram.com/stories/${username}/`)
+    const res = await withTimeout(fn(`https://www.instagram.com/stories/${username}/`), 7000)
 
     if (res?.success && Array.isArray(res.data?.media) && res.data.media.length > 0) {
       return res.data.media.map((m: any, idx: number) => {
@@ -305,133 +342,18 @@ function extractTimelineFromScripts(html: string): any[] {
   return timelineEdges
 }
 
-// Fallback generator if remote CDN or bot is temporarily throttled
-function generateFallbackInstagramMedia(username: string, name: string, avatarUrl: string): {
-  posts: PostItem[]
-  stories: StoryItem[]
-  highlights: HighlightItem[]
-  reels: ReelItem[]
-} {
-  const isMessi = username.toLowerCase() === 'leomessi'
-
-  const posts: PostItem[] = isMessi
-    ? [
-        {
-          id: 'p1',
-          type: 'image',
-          thumbnail: 'https://images.unsplash.com/photo-1544717305-2782549b5136?w=600&auto=format&fit=crop&q=80',
-          url: 'https://images.unsplash.com/photo-1544717305-2782549b5136?w=1200&auto=format&fit=crop&q=90',
-          caption: 'Después de este tiempo que pasé desde la final, pensándolo mucho, quiero agradecerles por todo el cariño recibido...',
-          likes: '19m',
-          comments: '1m',
-          timeAgo: '3 weeks ago',
-          downloadUrl: 'https://images.unsplash.com/photo-1544717305-2782549b5136?w=1200&auto=format&fit=crop&q=90',
-        },
-        {
-          id: 'p2',
-          type: 'image',
-          thumbnail: 'https://images.unsplash.com/photo-1508098682722-e99c43a406b2?w=600&auto=format&fit=crop&q=80',
-          url: 'https://images.unsplash.com/photo-1508098682722-e99c43a406b2?w=1200&auto=format&fit=crop&q=90',
-          caption: '¡¡¡SOMOS CAMPEONES DE LA MLS!!! 🏆 🎊 😃 Desde que llegué a este club soñaba con vivir momentos como este...',
-          likes: '11m',
-          comments: '189k',
-          timeAgo: '9 months ago',
-          downloadUrl: 'https://images.unsplash.com/photo-1508098682722-e99c43a406b2?w=1200&auto=format&fit=crop&q=90',
-        },
-        {
-          id: 'p3',
-          type: 'image',
-          thumbnail: 'https://images.unsplash.com/photo-1517466787929-bc90951d0974?w=600&auto=format&fit=crop&q=80',
-          url: 'https://images.unsplash.com/photo-1517466787929-bc90951d0974?w=1200&auto=format&fit=crop&q=90',
-          caption: '¡¡¡SOMOS CAMPEONES DE LA MLS!!! 🏆 🎊 😃 Muy felices por todo el esfuerzo de mis compañeros y la hinchada...',
-          likes: '11m',
-          comments: '189k',
-          timeAgo: '9 months ago',
-          downloadUrl: 'https://images.unsplash.com/photo-1517466787929-bc90951d0974?w=1200&auto=format&fit=crop&q=90',
-        },
-      ]
-    : [
-        {
-          id: 'p1',
-          type: 'image',
-          thumbnail: avatarUrl || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=600&auto=format&fit=crop&q=80',
-          url: avatarUrl || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=1200&auto=format&fit=crop&q=90',
-          caption: `Official recent photo from @${username}. HD uncompressed photo ready to download.`,
-          likes: '24.5k',
-          comments: '890',
-          timeAgo: '2 days ago',
-          downloadUrl: avatarUrl || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=1200&auto=format&fit=crop&q=90',
-        },
-      ]
-
-  const stories: StoryItem[] = [
-    {
-      id: 's1',
-      type: 'image',
-      thumbnail: avatarUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=600&auto=format&fit=crop&q=80',
-      url: avatarUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=1080&auto=format&fit=crop&q=90',
-      timeAgo: '4 hours ago',
-      downloadUrl: avatarUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=1080&auto=format&fit=crop&q=90',
-    },
-  ]
-
-  const highlights: HighlightItem[] = [
-    {
-      id: 'h1',
-      title: 'Highlights',
-      cover: avatarUrl,
-      storiesCount: 12,
-    },
-  ]
-
-  const reels: ReelItem[] = [
-    {
-      id: 'r1',
-      title: `Trending Reel by @${username}`,
-      thumbnail: avatarUrl,
-      url: avatarUrl,
-      views: '180K',
-      likes: '24K',
-      downloadUrl: avatarUrl,
-    },
-  ]
-
-  return { posts, stories, highlights, reels }
-}
-
-// 1. Instagram Profile Inspector (100% Real Posts, Stories, Reels & Highlights)
+// 1. Instagram Profile Inspector (public posts, stories, reels when Instagram exposes them)
 async function fetchInstagramProfile(rawQuery: string): Promise<ProfileData | null> {
   const parsedInfo = parseAndBuildAutoUrl(rawQuery, 'instagram')
   const username = parsedInfo.username
   if (!username) return null
 
-  // Special brand profile support for a2zdownloader
-  if (username.toLowerCase() === 'a2zdownloader') {
-    const avatarUrl = '/logo.png'
-    const { posts, stories, highlights, reels } = generateFallbackInstagramMedia('a2zdownloader', 'A2Z Downloader', avatarUrl)
-    return {
-      platform: 'instagram',
-      username: 'a2zdownloader',
-      name: 'A2Z Downloader',
-      avatarUrl,
-      hdAvatarUrl: avatarUrl,
-      bio: '🚀 Official A2Z Downloader – All-in-One Online Media Downloader & Anonymous Profile Viewer for Instagram, TikTok, Facebook & Snapchat.',
-      followers: '2.4M',
-      following: '12',
-      postsCount: '120',
-      isPrivate: false,
-      profileUrl: 'https://a2zdownloader.vercel.app',
-      posts,
-      stories,
-      highlights,
-      reels,
-    }
-  }
-
   try {
+    const storiesPromise = fetchInstagramStories(username)
+
     let html = ''
 
-    // Tier 0: Cloudflare Edge Worker Proxy (100k free requests/day, edge network bypasses datacenter blocks)
+    // Tier 0: Cloudflare Edge Worker Proxy (public HTML only; 6s cap)
     try {
       const cfRes = await fetch(`https://ig-proxy.mrfreqline.workers.dev/?username=${encodeURIComponent(username)}`, {
         signal: AbortSignal.timeout(6000),
@@ -440,6 +362,7 @@ async function fetchInstagramProfile(rawQuery: string): Promise<ProfileData | nu
         const cfHtml = await cfRes.text()
         if (
           cfHtml &&
+          !looksLikeLoginWall(cfHtml) &&
           (cfHtml.includes('og:title') ||
             cfHtml.includes('polaris_timeline_connection') ||
             cfHtml.includes('xig_user_by_igid_v2'))
@@ -451,7 +374,7 @@ async function fetchInstagramProfile(rawQuery: string): Promise<ProfileData | nu
       console.warn('[Instagram Cloudflare Worker Fetch Warn]:', cfErr)
     }
 
-    // Tier 1: Fetch via Googlebot UA to retrieve the complete public timeline & JSON cache
+    // Tier 1: Fetch via Googlebot UA to retrieve public OpenGraph / timeline JSON
     if (!html) {
       try {
         const res = await fetch(`https://www.instagram.com/${username}/`, {
@@ -489,8 +412,7 @@ async function fetchInstagramProfile(rawQuery: string): Promise<ProfileData | nu
       }
     }
 
-    // Always fetch 100% Real Live Uploaded Stories via SnapSave
-    const realStories = await fetchInstagramStories(username)
+    const realStories = await storiesPromise.catch(() => [] as StoryItem[])
 
     // Extract OpenGraph tags if HTML was retrieved
     const ogTitleMatch = html ? html.match(/<meta\s+property=["']og:title["']\s+content=["']([^"']+)["']/i) : null
@@ -501,8 +423,11 @@ async function fetchInstagramProfile(rawQuery: string): Promise<ProfileData | nu
         html.match(/<meta\s+content=["']([^"']+)["']\s+name=["']description["']/i)
       : null
 
-    // If HTML was completely blocked by Meta, return a valid ProfileData object so user NEVER gets 404!
-    if (!html || (!ogTitleMatch && !ogImageMatch)) {
+    const htmlIsLoginWall = looksLikeLoginWall(html)
+    const isPrivateHint = /this account is private/i.test(html || '') || /"is_private"\s*:\s*true/i.test(html || '')
+
+    // Honest empty profile when Instagram blocks HTML — never invent Unsplash posts
+    if (!html || htmlIsLoginWall || (!ogTitleMatch && !ogImageMatch)) {
       const avatarUrl = realStories[0]?.thumbnail || `https://unavatar.io/instagram/${username}`
       return {
         platform: 'instagram',
@@ -510,11 +435,13 @@ async function fetchInstagramProfile(rawQuery: string): Promise<ProfileData | nu
         name: username,
         avatarUrl,
         hdAvatarUrl: avatarUrl,
-        bio: `Instagram profile for @${username}. Paste any Reel or Post link above to view & download in 1080p.`,
-        followers: 'Public Profile',
+        bio: isPrivateHint
+          ? `This Instagram account appears to be private. Anonymous download only works for public posts — paste a public Reel or Post link instead.`
+          : `Public profile header for @${username}. Instagram did not return a post grid. Paste any public Reel, post, carousel, or story link above to download.`,
+        followers: isPrivateHint ? 'Private' : 'Public Profile',
         following: '',
         postsCount: realStories.length > 0 ? `${realStories.length} Stories` : '0',
-        isPrivate: false,
+        isPrivate: isPrivateHint,
         profileUrl: `https://www.instagram.com/${username}/`,
         posts: [],
         stories: realStories,
@@ -662,69 +589,30 @@ async function fetchInstagramProfile(rawQuery: string): Promise<ProfileData | nu
       }
     }
 
-    // Parallel pre-resolve direct MP4 streams for top reels (first 4)
-    if (reels.length > 0) {
-      const topReels = reels.slice(0, 4)
-      await Promise.allSettled(
-        topReels.map(async (reel) => {
-          try {
-            const direct = await scrapeInstagramDirectPost(`https://www.instagram.com/reel/${reel.id}/`)
-            if (direct?.downloadUrl && (direct.fileType === 'video' || direct.downloadUrl.includes('.mp4') || direct.downloadUrl.includes('/o1/v/'))) {
-              reel.url = direct.downloadUrl
-              reel.downloadUrl = direct.downloadUrl
-            }
-          } catch {}
-        })
-      )
-    }
-
-    // If no real posts could be parsed (bot block), fallback to rich simulated media
+    // Honest empty grid when timeline JSON is missing (do not substitute stock photos)
     if (posts.length === 0) {
-      const fallback = generateFallbackInstagramMedia(username, name, ogImage)
       return {
         platform: 'instagram',
         username,
         name,
         avatarUrl: ogImage,
         hdAvatarUrl: ogImage,
-        bio,
-        followers: followers || '10K',
-        following: following || '350',
-        postsCount: postsCount || '24',
-        isPrivate: false,
+        bio:
+          bio ||
+          `Found @${username}. Instagram did not expose a public post grid to this server. Paste a public Reel, post, or story URL to download.`,
+        followers: followers || '',
+        following: following || '',
+        postsCount: postsCount || '0',
+        isPrivate: isPrivateHint,
         profileUrl: `https://www.instagram.com/${username}/`,
-        posts: fallback.posts,
-        stories: fallback.stories,
-        highlights: fallback.highlights,
-        reels: fallback.reels,
+        posts: [],
+        stories: realStories,
+        highlights: [],
+        reels: [],
       }
     }
 
-    // Build Highlights with real cover images from user posts
-    let highlights: HighlightItem[] = []
-    if (username.toLowerCase() === 'ruth_chavarri') {
-      const titles = ['🌸✨', '🖤✨', 'VE', '☀️', '🌿', '🐶🐾', 'RD 🌸']
-      highlights = titles.map((title, idx) => {
-        const p = posts[idx % posts.length]
-        return {
-          id: `h_${idx + 1}`,
-          title,
-          cover: p ? p.thumbnail : ogImage,
-          storiesCount: (idx + 1) * 3 + 4,
-        }
-      })
-    } else {
-      highlights = posts.slice(0, Math.min(6, posts.length)).map((p, idx) => {
-        const words = (p.caption || '').split(/\s+/).filter(Boolean)
-        const cleanTitle = words.length > 0 ? words[0].replace(/[#@]/g, '').slice(0, 10) : `Story ${idx + 1}`
-        return {
-          id: `h_${idx + 1}`,
-          title: cleanTitle || `Highlight ${idx + 1}`,
-          cover: p.thumbnail,
-          storiesCount: (idx + 2) * 3,
-        }
-      })
-    }
+    const highlights: HighlightItem[] = []
 
     const stories: StoryItem[] = realStories
 
@@ -735,10 +623,10 @@ async function fetchInstagramProfile(rawQuery: string): Promise<ProfileData | nu
       avatarUrl: ogImage,
       hdAvatarUrl: ogImage,
       bio,
-      followers: followers || '1M',
-      following: following || '500',
+      followers: followers || '',
+      following: following || '',
       postsCount: postsCount || `${posts.length}`,
-      isPrivate: false,
+      isPrivate: isPrivateHint,
       profileUrl: `https://www.instagram.com/${username}/`,
       posts,
       stories,
@@ -966,7 +854,7 @@ async function scrapeInstagramDirectPost(postUrl: string): Promise<any | null> {
     // Tier 0: Snapsave integration for 100% reliable 1080p Reels, Carousels & Photos
     try {
       const { snapsave } = await import('snapsave-media-downloader')
-      const snapRes: any = await snapsave(cleanUrl)
+      const snapRes: any = await withTimeout(snapsave(cleanUrl), 7000)
       if (snapRes?.success && Array.isArray(snapRes.data?.media) && snapRes.data.media.length > 0) {
         const snapItems = snapRes.data.media
         const isCarousel = snapItems.length > 1
@@ -1130,9 +1018,33 @@ async function handleProfileRequest(query: string, platform: string) {
   const autoResult = parseAndBuildAutoUrl(query, platform)
   const effectivePlatform = autoResult.platform
   const effectiveQuery = autoResult.constructedUrl
+  const wantsDirectMedia = autoResult.isDirectMedia || isPublicMediaUrl(query) || isPublicMediaUrl(effectiveQuery)
 
-  // 1. Check if user provided a direct media link (Reel, Post, Story Item, Spotlight)
-  if (autoResult.isDirectMedia) {
+  // FastDL-style path: paste a public post / reel / story / video URL → resolve media, no login
+  if (wantsDirectMedia) {
+    try {
+      const media = await withTimeout(resolveMediaUrl(effectiveQuery), 18000)
+      if (media?.downloadUrl) {
+        return NextResponse.json({
+          success: true,
+          isMedia: true,
+          media: toAnonymousMediaPayload(media),
+        })
+      }
+    } catch (mediaErr: any) {
+      console.warn('[Direct Media Resolve in Profile Route warn]:', mediaErr?.message || mediaErr)
+      const msg = String(mediaErr?.message || '')
+      if (/private|login|inaccessible/i.test(msg)) {
+        return NextResponse.json(
+          {
+            error:
+              'This post is private or requires an Instagram login. Anonymous download only works for public links that anyone can open without an account.',
+          },
+          { status: 403 }
+        )
+      }
+    }
+
     if (effectiveQuery.includes('instagram.com') || effectiveQuery.includes('instagr.am')) {
       const directIg = await scrapeInstagramDirectPost(effectiveQuery)
       if (directIg) {
@@ -1144,34 +1056,16 @@ async function handleProfileRequest(query: string, platform: string) {
       }
     }
 
-    // Universal stream-resolver fallback
-    try {
-      const { resolveMediaUrl } = await import('@/lib/downloader/stream-resolver')
-      const media = await resolveMediaUrl(effectiveQuery)
-      if (media) {
-        return NextResponse.json({
-          success: true,
-          isMedia: true,
-          media: {
-            title: media.title,
-            thumbnail: media.thumbnail,
-            streamUrl: media.streamUrl || media.downloadUrl,
-            downloadUrl: media.downloadUrl,
-            audioUrl: media.audioUrl,
-            platform: media.platform,
-            fileType: media.fileType || 'video',
-            qualities: media.qualities,
-            uploader: media.uploader,
-            images: media.images,
-          },
-        })
-      }
-    } catch (mediaErr: any) {
-      console.warn('[Direct Media Resolve in Profile Route warn]:', mediaErr?.message || mediaErr)
-    }
+    return NextResponse.json(
+      {
+        error:
+          'Could not extract public media from this link. Confirm it opens without login in a private browser window, then try again.',
+      },
+      { status: 404 }
+    )
   }
 
-  // 2. Fetch Profile details
+  // Username / profile lookup (grid is best-effort; downloads still use a pasted public URL)
   let result: ProfileData | null = null
 
   switch (effectivePlatform) {
@@ -1194,7 +1088,7 @@ async function handleProfileRequest(query: string, platform: string) {
   if (!result) {
     return NextResponse.json(
       {
-        error: `Profile not found on ${effectivePlatform.charAt(0).toUpperCase() + effectivePlatform.slice(1)}. Please double-check the username or link and try again.`,
+        error: `Profile not found on ${effectivePlatform.charAt(0).toUpperCase() + effectivePlatform.slice(1)}. Please double-check the username or paste a public media link.`,
       },
       { status: 404 }
     )

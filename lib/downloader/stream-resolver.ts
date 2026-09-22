@@ -382,13 +382,27 @@ export async function resolveFacebook(url: string): Promise<StreamResult | null>
 }
 
 // Helper to enforce strict timeouts per scraper tier to avoid serverless function hangs
-function withTimeout(promise: Promise<any>, ms: number): Promise<any> {
+export function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   return Promise.race([
     promise,
-    new Promise((_, reject) =>
+    new Promise<T>((_, reject) =>
       setTimeout(() => reject(new Error(`Operation timed out after ${ms}ms`)), ms)
     ),
   ])
+}
+
+// Decode RapidCDN / SnapSave JWT token URLs to the raw media CDN link
+export function extractUrlFromToken(tokenUrl: string): string {
+  if (!tokenUrl || typeof tokenUrl !== 'string') return tokenUrl
+  try {
+    const match = tokenUrl.match(/token=([a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+)/)
+    if (!match) return tokenUrl
+    const parts = match[1].split('.')
+    const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString('utf8'))
+    return payload.url || tokenUrl
+  } catch {
+    return tokenUrl
+  }
 }
 
 // Accurately determine whether a scraped Instagram asset is a video stream
@@ -408,11 +422,27 @@ export async function resolveInstagram(url: string): Promise<StreamResult | null
   const isReelUrl = /(?:reel|reels|tv)\//i.test(url) || /(?:reel|reels|tv)\//i.test(cleanUrl)
   const shortcodeMatch = cleanUrl.match(/(?:reel|reels|p|tv)\/([a-zA-Z0-9_-]+)/)
   const shortcode = shortcodeMatch ? shortcodeMatch[1] : null
+  const isMediaPath = /\/(reel|reels|p|tv|stories|share|s)\//i.test(cleanUrl)
+  const reservedIgPaths = [
+    'p',
+    'reel',
+    'reels',
+    'tv',
+    'stories',
+    'explore',
+    'direct',
+    'share',
+    's',
+    'accounts',
+    'about',
+    'legal',
+  ]
 
   // Profile URL detection (e.g. instagram.com/mr.freakline or instagram.com/leomessi)
-  if (!shortcode) {
+  // Never treat share/story/media paths as a username.
+  if (!shortcode && !isMediaPath) {
     const profileMatch = cleanUrl.match(/(?:instagram\.com\/|^@)([a-zA-Z0-9_.]+)\/?$/i)
-    if (profileMatch && !['p', 'reel', 'reels', 'tv', 'stories', 'explore', 'direct'].includes(profileMatch[1].toLowerCase())) {
+    if (profileMatch && !reservedIgPaths.includes(profileMatch[1].toLowerCase())) {
       const username = profileMatch[1]
       try {
         const res = await fetch(`https://www.instagram.com/${username}/`, {
@@ -568,9 +598,13 @@ export async function resolveInstagram(url: string): Promise<StreamResult | null
         6500
       )) as any
       if (snapRes?.success && snapRes.data?.media && Array.isArray(snapRes.data.media)) {
-        const items = snapRes.data.media.filter(
-          (m: any) => m?.url && typeof m.url === 'string' && m.url.startsWith('http')
-        )
+        const items = snapRes.data.media
+          .map((m: any) => ({
+            ...m,
+            url: extractUrlFromToken(m?.url || ''),
+            thumbnail: extractUrlFromToken(m?.thumbnail || '') || m?.thumbnail,
+          }))
+          .filter((m: any) => m?.url && typeof m.url === 'string' && m.url.startsWith('http'))
         if (items.length > 0) {
           const hasVideo = isReelUrl || items.some((m: any) => m.type === 'video' || (m.type !== 'image' && isLikelyInstagramVideo(m.url)))
           if (hasVideo) {

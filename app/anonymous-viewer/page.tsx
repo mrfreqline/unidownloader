@@ -126,32 +126,32 @@ const PLATFORMS = [
     name: 'Instagram',
     color: 'from-blue-600 via-cyan-500 to-emerald-400',
     activeBg: 'bg-blue-600 text-white shadow-blue-500/20',
-    placeholder: 'Enter username (e.g. mrfreqline) or paste Reel / Post link...',
-    helper: 'Enter username (auto: instagram.com/username) or paste any Reel / Carousel / Post link.',
+    placeholder: 'Paste Instagram Reel, post, carousel, or story URL…',
+    helper: 'No login. Paste a public Instagram link and download. Username lookup is optional and may not show a grid.',
   },
   {
     id: 'tiktok',
     name: 'TikTok',
     color: 'from-cyan-400 to-pink-500',
     activeBg: 'bg-gradient-to-r from-cyan-500 to-pink-500 text-white shadow-cyan-500/20',
-    placeholder: 'Enter TikTok username (e.g. mrbeast) or video link...',
-    helper: 'Enter username (auto: tiktok.com/@username?lang=en) or paste video link.',
+    placeholder: 'Paste a public TikTok video link…',
+    helper: 'Paste a public TikTok video URL. No TikTok account required.',
   },
   {
     id: 'snapchat',
     name: 'Snapchat',
     color: 'from-amber-400 to-yellow-500',
     activeBg: 'bg-yellow-400 text-zinc-950 font-bold shadow-yellow-500/20',
-    placeholder: 'Enter public story link (story.snapchat.com/...) or username...',
-    helper: 'Paste public story/spotlight link. For Bitmoji avatar, enter username (auto: snapchat.com/add/username).',
+    placeholder: 'Paste a public Snapchat spotlight or story URL…',
+    helper: 'No login. Paste a public Snapchat media link. Username lookup only shows public Bitmoji when available.',
   },
   {
     id: 'facebook',
     name: 'Facebook',
     color: 'from-blue-600 to-indigo-600',
     activeBg: 'bg-blue-600 text-white shadow-blue-500/20',
-    placeholder: 'Enter Facebook username (e.g. zuck) or profile ID number (e.g. 10008328198)...',
-    helper: 'Enter username or numeric profile ID (auto: facebook.com/username or profile.php?id=number).',
+    placeholder: 'Paste a public Facebook reel, watch, or share URL…',
+    helper: 'No login. Paste a public Facebook video/reel link. Private posts cannot be opened anonymously.',
   },
 ]
 
@@ -182,9 +182,12 @@ function getAutoUrlInfo(rawInput: string, defaultPlatform: 'instagram' | 'tiktok
 
       const isDirectMedia =
         /(?:reel|reels|p|tv)\/([a-zA-Z0-9_-]+)/i.test(trimmed) ||
-        /\/stories\/[a-zA-Z0-9_.]+\/(\d+)/i.test(trimmed) ||
+        /\/stories\/[a-zA-Z0-9_.]+/i.test(trimmed) ||
+        /\/share\//i.test(trimmed) ||
+        /instagram\.com\/s\/[a-zA-Z0-9_-]+/i.test(trimmed) ||
         /\/video\/\d+/i.test(trimmed) ||
-        /snapchat\.com\/.*(?:spotlight|stories)/i.test(trimmed)
+        /snapchat\.com\/.*(?:spotlight|stories)/i.test(trimmed) ||
+        /facebook\.com\/(?:reel|watch|share)/i.test(trimmed)
 
       return {
         platform,
@@ -285,6 +288,9 @@ export default function AnonymousViewerPage() {
         if (auto.platform !== activePlatform) {
           setActivePlatform(auto.platform)
         }
+        if (auto.isDirectMedia || auto.isFullUrl) {
+          void handleSearch(undefined, trimmed)
+        }
       }
     } catch {}
   }
@@ -312,26 +318,37 @@ export default function AnonymousViewerPage() {
       setActiveTab('POSTS')
     }
 
+    const controller = new AbortController()
+    const timeoutId = window.setTimeout(() => controller.abort(), 28000)
+
     try {
       const res = await fetch('/api/profile', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ platform: effectivePlatform, query: targetQuery.trim() }),
+        signal: controller.signal,
       })
 
-      const data = await res.json()
+      const data = await res.json().catch(() => ({}))
       if (!res.ok || !data.success) {
-        throw new Error(data.error || 'Failed to fetch profile or media.')
+        throw new Error(data.error || 'Failed to fetch this public link.')
       }
 
       if (data.isMedia && data.media) {
         setMedia(data.media)
       } else if (data.profile) {
         setProfile(data.profile)
+      } else {
+        throw new Error('No public media was returned for this link.')
       }
     } catch (err: any) {
-      setError(err.message || 'Could not find this profile. Please check the URL or username.')
+      if (err?.name === 'AbortError') {
+        setError('That request took too long. Paste a public post, Reel, or story URL and try again.')
+      } else {
+        setError(err.message || 'Could not fetch this public link. Private accounts cannot be opened anonymously.')
+      }
     } finally {
+      window.clearTimeout(timeoutId)
       setIsSearching(false)
     }
   }
@@ -578,15 +595,14 @@ export default function AnonymousViewerPage() {
         <div className="text-center max-w-3xl mx-auto mb-6">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold bg-blue-500/10 text-blue-600 dark:text-cyan-400 border border-blue-500/20 mb-3">
             <ShieldCheck className="w-3.5 h-3.5" />
-            <span>FastDL-Style Anonymous Profile, Story, Reel & Post Viewer</span>
+            <span>Anonymous public downloader — paste a link, no login</span>
           </div>
           <h1 className="text-2xl sm:text-4xl font-extrabold tracking-tight mb-2">
             Instagram Story, Reel & Post{' '}
             <span className="text-blue-600 dark:text-cyan-400">Downloader</span>
           </h1>
           <p className="text-xs sm:text-sm text-zinc-500 dark:text-zinc-400">
-            View & download stories, high-resolution posts, reels, and original 1080p profile pictures with 100%
-            anonymity.
+            Paste a public Reel, post, carousel, or story URL. No account. Preview and download when the link is public.
           </p>
         </div>
 
