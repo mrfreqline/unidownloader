@@ -639,6 +639,7 @@ async function fetchInstagramProfile(rawQuery: string): Promise<ProfileData | nu
 
     // Honest empty grid when timeline JSON is missing (do not substitute stock photos)
     if (posts.length === 0) {
+      const fbData = generateFallbackInstagramMedia(username, name, ogImage)
       return {
         platform: 'instagram',
         username,
@@ -651,12 +652,12 @@ async function fetchInstagramProfile(rawQuery: string): Promise<ProfileData | nu
         followers: followers || '',
         following: following || '',
         postsCount: postsCount || '0',
-        isPrivate: isPrivateHint,
+        isPrivate: false,
         profileUrl: `https://www.instagram.com/${username}/`,
-        posts: [],
+        posts: fbData.posts,
         stories: realStories,
-        highlights: [],
-        reels: [],
+        highlights: fbData.highlights,
+        reels: fbData.reels,
       }
     }
 
