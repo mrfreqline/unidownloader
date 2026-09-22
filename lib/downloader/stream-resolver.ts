@@ -382,7 +382,7 @@ export async function resolveFacebook(url: string): Promise<StreamResult | null>
 }
 
 // Helper to enforce strict timeouts per scraper tier to avoid serverless function hangs
-export function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+export function withTimeout<T = any>(promise: Promise<T>, ms: number): Promise<T> {
   return Promise.race([
     promise,
     new Promise<T>((_, reject) =>

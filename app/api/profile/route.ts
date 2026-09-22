@@ -231,7 +231,7 @@ async function fetchInstagramStories(username: string): Promise<StoryItem[]> {
   try {
     const snapMod = await import('snapsave-media-downloader')
     const fn = (snapMod as any).snapsave || (snapMod as any).default || snapMod
-    const res = await withTimeout(fn(`https://www.instagram.com/stories/${username}/`), 7000)
+    const res: any = await withTimeout(fn(`https://www.instagram.com/stories/${username}/`), 7000)
 
     if (res?.success && Array.isArray(res.data?.media) && res.data.media.length > 0) {
       return res.data.media.map((m: any, idx: number) => {
