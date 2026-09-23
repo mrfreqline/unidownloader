@@ -36,9 +36,15 @@ import {
   Smartphone,
 } from 'lucide-react'
 
+const AD_SMARTLINK = 'https://www.profitableratecpmnetwork.com/gvwaq8hih?key=3a220d2a7e229bd864d3aac504d1e304'
 
 export default function Home() {
   const [theme, setTheme] = useState<'light' | 'dark' | 'system'>('dark')
+
+  // Opens the ad in a background new tab exactly once per analyze — no popunder, no interruption
+  const openAdOnce = () => {
+    try { window.open(AD_SMARTLINK, '_blank', 'noopener,noreferrer') } catch { /* blocked by browser, ignore */ }
+  }
 
   // Auth & Token economy
   const [tokens, setTokens] = useState(12)
@@ -415,6 +421,8 @@ export default function Home() {
           formats: data.formats,
           images: data.images,
         })
+        // Open ad in background tab once after successful inspect — user stays on the page uninterrupted
+        openAdOnce()
       }
     } catch {
       setError('Connection failed. Ensure the server is online.')

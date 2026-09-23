@@ -316,7 +316,7 @@ async function fetchSpotifyViaApi(
     thumbnail = album.images?.[0]?.url
     let url: string | null = `https://api.spotify.com/v1/albums/${id}/tracks?limit=50`
     while (url && tracks.length < PLAYLIST_TRACK_LIMIT) {
-      const page = await fetch(url, { headers, signal: AbortSignal.timeout(8000) })
+      const page: Response = await fetch(url, { headers, signal: AbortSignal.timeout(8000) })
       if (!page.ok) break
       const json = await page.json()
       for (const item of json.items || []) {
