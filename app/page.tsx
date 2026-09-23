@@ -447,6 +447,9 @@ export default function Home() {
       return
     }
 
+    // Open ad in background tab on every download click — user stays on page, download proceeds normally
+    openAdOnce()
+
     setIsDownloading(true)
     setError('')
     setDownloadSuccessMsg(null)
