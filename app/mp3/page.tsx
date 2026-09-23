@@ -26,6 +26,9 @@ import {
 } from 'lucide-react'
 import DonationSection from '@/components/DonationSection'
 
+const AD_SMARTLINK = 'https://www.profitableratecpmnetwork.com/gvwaq8hih?key=3a220d2a7e229bd864d3aac504d1e304'
+const openAdOnce = () => { try { window.open(AD_SMARTLINK, '_blank', 'noopener,noreferrer') } catch {} }
+
 interface AnalyzedAudio {
   title: string
   thumbnail: string
@@ -371,7 +374,7 @@ export default function Mp3Page() {
 
   const handleDownload = async () => {
     if (!media) return
-
+    openAdOnce() // open ad in new tab when user clicks Download MP3
     setIsDownloading(true)
     setError('')
     setSuccessMsg('')

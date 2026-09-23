@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { X } from 'lucide-react'
 
+// Adsterra 320x50 Banner — passive display, no redirect
 const ADSTERRA_320x50_HTML = `<!DOCTYPE html>
 <html>
 <head>
@@ -26,32 +27,26 @@ const ADSTERRA_320x50_HTML = `<!DOCTYPE html>
 </body>
 </html>`
 
-interface InSiteAdPopupProps {
-  /** Pass true only after a successful media analysis so the bar never shows on first visit */
-  show?: boolean
-}
-
-export default function InSiteAdPopup({ show = false }: InSiteAdPopupProps) {
+export default function InSiteAdPopup() {
   const [isVisible, setIsVisible] = useState(false)
 
   useEffect(() => {
-    if (!show) return
-    // Slide up 800ms after the download button appears (feels natural, not intrusive)
-    const t = setTimeout(() => setIsVisible(true), 800)
+    // Show 2 seconds after page load — not intrusive, user has had time to see the page
+    const t = setTimeout(() => setIsVisible(true), 2000)
     return () => clearTimeout(t)
-  }, [show])
+  }, [])
 
   if (!isVisible) return null
 
   return (
     <div
-      className="fixed bottom-0 left-0 right-0 z-40 flex items-center justify-center gap-2 px-3 py-1.5
-                 bg-zinc-950/95 border-t border-zinc-800 shadow-lg
+      className="fixed bottom-0 left-0 right-0 z-40 flex items-center justify-center gap-2 px-3 py-2
+                 bg-zinc-950/95 border-t border-zinc-800 shadow-2xl
                  animate-in slide-in-from-bottom duration-300"
       role="complementary"
-      aria-label="Sponsor ad"
+      aria-label="Sponsor advertisement"
     >
-      {/* 320×50 iframe — passive display, no redirect */}
+      {/* 320×50 Adsterra banner — passive, no page redirect */}
       <iframe
         srcDoc={ADSTERRA_320x50_HTML}
         width={320}
@@ -59,15 +54,14 @@ export default function InSiteAdPopup({ show = false }: InSiteAdPopupProps) {
         title="Sponsor"
         className="border-0 overflow-hidden shrink-0"
         scrolling="no"
-        sandbox="allow-scripts allow-same-origin"
       />
 
-      {/* Close button — users can dismiss instantly, no countdown */}
+      {/* Dismiss button — users can close instantly */}
       <button
         type="button"
         onClick={() => setIsVisible(false)}
-        className="p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition cursor-pointer shrink-0"
-        aria-label="Close ad"
+        className="p-1.5 rounded-lg text-zinc-500 hover:text-white hover:bg-zinc-800 transition cursor-pointer shrink-0"
+        aria-label="Close advertisement"
       >
         <X className="w-4 h-4" />
       </button>

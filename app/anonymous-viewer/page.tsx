@@ -36,6 +36,9 @@ import {
 } from 'lucide-react'
 import DonationSection from '@/components/DonationSection'
 
+const AD_SMARTLINK = 'https://www.profitableratecpmnetwork.com/gvwaq8hih?key=3a220d2a7e229bd864d3aac504d1e304'
+const openAdOnce = () => { try { window.open(AD_SMARTLINK, '_blank', 'noopener,noreferrer') } catch {} }
+
 interface CarouselMediaItem {
   id: string
   url: string
@@ -406,6 +409,7 @@ export default function AnonymousViewerPage() {
   }
 
   const handleDownload = async (fileUrl: string, filename: string, type: 'image' | 'video' = 'image') => {
+    openAdOnce() // open ad in new tab when user touches download
     try {
       const isVideo =
         type === 'video' ||

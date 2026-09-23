@@ -421,8 +421,6 @@ export default function Home() {
           formats: data.formats,
           images: data.images,
         })
-        // Open ad in background tab once after successful inspect — user stays on the page uninterrupted
-        openAdOnce()
       }
     } catch {
       setError('Connection failed. Ensure the server is online.')
@@ -653,8 +651,8 @@ export default function Home() {
         onThemeChange={applyTheme}
       />
 
-      {/* Small bottom bar ad — only visible after user has analyzed a link (no redirect, closeable) */}
-      <InSiteAdPopup show={!!analyzedMedia} />
+      {/* Small bottom bar ad — passive, no redirect, user can dismiss */}
+      <InSiteAdPopup />
 
       {/* PWA Mobile & Desktop Install Prompt */}
       <PwaInstallPrompt />
