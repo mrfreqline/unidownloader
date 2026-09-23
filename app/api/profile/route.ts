@@ -675,7 +675,7 @@ async function fetchInstagramProfile(rawQuery: string): Promise<ProfileData | nu
       followers: followers || '',
       following: following || '',
       postsCount: postsCount || `${posts.length}`,
-      isPrivate: isPrivateHint,
+      isPrivate: false,
       profileUrl: `https://www.instagram.com/${username}/`,
       posts,
       stories,
