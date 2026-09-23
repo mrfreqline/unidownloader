@@ -21,8 +21,8 @@ import {
 
 import AdBanner from './AdBanner'
 
-const ADSTERRA_SMARTLINK =
-  'https://www.profitableratecpmnetwork.com/gvwaq8hih?key=3a220d2a7e229bd864d3aac504d1e304'
+const ADSTERRA_SMARTLINK = '' // ads removed
+
 
 interface TokenModalProps {
   isOpen: boolean
@@ -96,11 +96,6 @@ export default function TokenModal({
   if (!isOpen) return null
 
   const handleStartAd = () => {
-    try {
-      window.open(ADSTERRA_SMARTLINK, '_blank', 'noopener,noreferrer')
-    } catch {
-      // Ignore if blocked by browser
-    }
     setIsWatchingAd(true)
     setAdProgress(0)
     setAdSecondsLeft(5)
@@ -255,28 +250,13 @@ export default function TokenModal({
                   />
                 </div>
 
-                {/* AD DISPLAY SLOT: Live Adsterra Unit */}
+                {/* AD DISPLAY SLOT */}
                 <div className="space-y-2">
                   <div
                     id="adsterra-banner-slot"
-                    className="relative rounded-xl bg-zinc-900 border border-zinc-800 p-2 sm:p-3 hover:border-zinc-700 transition group cursor-pointer touch-manipulation text-center"
-                    onClick={() => {
-                      try {
-                        window.open(ADSTERRA_SMARTLINK, '_blank', 'noopener,noreferrer')
-                      } catch {}
-                    }}
-                    title="Click to visit sponsor"
+                    className="relative rounded-xl bg-zinc-900 border border-zinc-800 p-2 sm:p-3 text-center"
                   >
                     <AdBanner format="mobile_only" className="my-0" />
-
-                    <div className="mt-1 pt-1.5 border-t border-zinc-800/80 flex items-center justify-between text-[10px] font-mono text-zinc-400 px-1">
-                      <span className="flex items-center gap-1 text-emerald-400">
-                        <Sparkles className="w-3 h-3" /> Adsterra Sponsor
-                      </span>
-                      <span className="text-blue-400 group-hover:underline flex items-center gap-1">
-                        Open Ad <ExternalLink className="w-2.5 h-2.5" />
-                      </span>
-                    </div>
                   </div>
                 </div>
 

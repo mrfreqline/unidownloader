@@ -165,18 +165,12 @@ export default function FolderExplorer({ initialFolder, onClose }: FolderExplore
     }
   }
 
-const ADSTERRA_SMARTLINK =
-  'https://www.profitableratecpmnetwork.com/gvwaq8hih?key=3a220d2a7e229bd864d3aac504d1e304'
+const ADSTERRA_SMARTLINK = ''
 
-  const triggerAdRedirect = () => {
-    try {
-      window.open(ADSTERRA_SMARTLINK, '_blank', 'noopener,noreferrer')
-    } catch {}
-  }
+  const triggerAdRedirect = () => { /* ads removed */ }
 
   // Download individual file
   const handleDownloadItem = (item: FolderItem) => {
-    triggerAdRedirect()
     const downloadUrl = item.downloadUrl || item.streamUrl
     if (!downloadUrl) return
 
@@ -358,7 +352,6 @@ const ADSTERRA_SMARTLINK =
                       {item.isVideo && (
                         <button
                           onClick={() => {
-                            triggerAdRedirect()
                             setActiveVideo(item)
                           }}
                           className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-blue-400 border border-blue-500/20 transition cursor-pointer"

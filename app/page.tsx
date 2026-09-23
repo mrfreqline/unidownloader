@@ -36,19 +36,9 @@ import {
   Smartphone,
 } from 'lucide-react'
 
-const ADSTERRA_SMARTLINK =
-  'https://www.profitableratecpmnetwork.com/gvwaq8hih?key=3a220d2a7e229bd864d3aac504d1e304'
 
 export default function Home() {
   const [theme, setTheme] = useState<'light' | 'dark' | 'system'>('dark')
-
-  const triggerAdRedirect = () => {
-    try {
-      window.open(ADSTERRA_SMARTLINK, '_blank', 'noopener,noreferrer')
-    } catch {
-      // Ignore if blocked
-    }
-  }
 
   // Auth & Token economy
   const [tokens, setTokens] = useState(12)
@@ -78,18 +68,6 @@ export default function Home() {
   const [maintenanceMsg, setMaintenanceMsg] = useState<string | null>(null)
   const [directDownloadLink, setDirectDownloadLink] = useState<{ url: string; filename: string } | null>(null)
 
-  useEffect(() => {
-    // When media is analyzed (1st inspect is done), activate popunder script so that any touch / interaction triggers the ad
-    if (analyzedMedia && typeof document !== 'undefined') {
-      if (!document.getElementById('adsterra-popunder')) {
-        const s = document.createElement('script')
-        s.id = 'adsterra-popunder'
-        s.type = 'text/javascript'
-        s.src = '//pl31434173.profitableratecpmnetwork.com/a4/16/ee/a416ee454471f4967396c21e6cfafe8e.js'
-        document.body.appendChild(s)
-      }
-    }
-  }, [analyzedMedia])
 
   useEffect(() => {
     // Detect mobile in-app webview (Instagram, TikTok, Facebook, etc.)
@@ -360,10 +338,6 @@ export default function Home() {
   }
 
   const handleAnalyze = async () => {
-    // First inspect has NO ad. Redirects to ad only on 2nd inspect and onwards
-    if (inspectCount >= 1) {
-      triggerAdRedirect()
-    }
     setInspectCount(prev => prev + 1)
 
     setError('')
@@ -464,9 +438,6 @@ export default function Home() {
       setIsTokenModalOpen(true)
       return
     }
-
-    // Trigger Adsterra ad in new tab on download
-    triggerAdRedirect()
 
     setIsDownloading(true)
     setError('')
@@ -671,8 +642,8 @@ export default function Home() {
         onThemeChange={applyTheme}
       />
 
-      {/* Small 5-second in-site crossable sponsor popup (no redirect) */}
-      <InSiteAdPopup />
+      {/* Small bottom bar ad — only visible after user has analyzed a link (no redirect, closeable) */}
+      <InSiteAdPopup show={!!analyzedMedia} />
 
       {/* PWA Mobile & Desktop Install Prompt */}
       <PwaInstallPrompt />
@@ -1016,9 +987,6 @@ export default function Home() {
 
         {/* Bottom Sponsor Ad Banner */}
         <AdBanner slot="bottom" />
-
-        {/* Adsterra Native Banner Container */}
-        <div id="container-aa6de9c30e965976a5448d3827e285f6" className="w-full max-w-4xl mx-auto my-3 text-center" />
 
       </main>
 

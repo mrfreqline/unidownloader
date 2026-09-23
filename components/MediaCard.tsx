@@ -266,9 +266,6 @@ export default function MediaCard({
           <button
             type="button"
             onClick={() => {
-              try {
-                window.open('https://www.profitableratecpmnetwork.com/gvwaq8hih?key=3a220d2a7e229bd864d3aac504d1e304', '_blank', 'noopener,noreferrer')
-              } catch {}
               setActiveTab('watch')
             }}
             className={`flex-1 py-2 px-1 rounded-lg flex items-center justify-center gap-1 sm:gap-2 transition touch-manipulation cursor-pointer ${

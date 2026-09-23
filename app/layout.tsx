@@ -359,11 +359,6 @@ export default function RootLayout({
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         <link rel="apple-touch-icon" href="/logo-icon.jpg" />
 
-        {/* Adsterra SocialBar */}
-        <script
-          async
-          src="https://pl31434136.profitableratecpmnetwork.com/aa/6d/e9/aa6de9c30e965976a5448d3827e285f6.js"
-        />
       </head>
       <body className="antialiased overflow-x-hidden selection:bg-zinc-800 selection:text-zinc-100">
         {children}

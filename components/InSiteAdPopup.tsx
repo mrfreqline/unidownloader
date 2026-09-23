@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { X, ExternalLink, Sparkles } from 'lucide-react'
+import { X } from 'lucide-react'
 
 const ADSTERRA_320x50_HTML = `<!DOCTYPE html>
 <html>
@@ -26,94 +26,51 @@ const ADSTERRA_320x50_HTML = `<!DOCTYPE html>
 </body>
 </html>`
 
-const SMARTLINK =
-  'https://www.profitableratecpmnetwork.com/gvwaq8hih?key=3a220d2a7e229bd864d3aac504d1e304'
+interface InSiteAdPopupProps {
+  /** Pass true only after a successful media analysis so the bar never shows on first visit */
+  show?: boolean
+}
 
-export default function InSiteAdPopup() {
-  const [isOpen, setIsOpen] = useState(false)
-  const [timeLeft, setTimeLeft] = useState(5)
-
-  useEffect(() => {
-    // Show after 1.2s on first load
-    const timer = setTimeout(() => {
-      setIsOpen(true)
-    }, 1200)
-
-    return () => clearTimeout(timer)
-  }, [])
+export default function InSiteAdPopup({ show = false }: InSiteAdPopupProps) {
+  const [isVisible, setIsVisible] = useState(false)
 
   useEffect(() => {
-    if (!isOpen) return
-    if (timeLeft <= 0) return
+    if (!show) return
+    // Slide up 800ms after the download button appears (feels natural, not intrusive)
+    const t = setTimeout(() => setIsVisible(true), 800)
+    return () => clearTimeout(t)
+  }, [show])
 
-    const interval = setInterval(() => {
-      setTimeLeft(prev => Math.max(0, prev - 1))
-    }, 1000)
-
-    return () => clearInterval(interval)
-  }, [isOpen, timeLeft])
-
-  if (!isOpen) return null
+  if (!isVisible) return null
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/65 backdrop-blur-xs animate-in fade-in duration-200">
-      <div className="relative w-full max-w-[360px] rounded-2xl bg-zinc-950 border border-zinc-800 shadow-2xl p-4 text-center space-y-3 animate-in zoom-in-95 duration-150">
-        
-        {/* Top Header with easy crossable button */}
-        <div className="flex items-center justify-between pb-1 border-b border-zinc-800/80">
-          <div className="flex items-center gap-1.5 text-zinc-400 text-xs font-mono">
-            <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-            <span className="text-[10px] tracking-wider uppercase font-semibold">Special Sponsor</span>
-          </div>
+    <div
+      className="fixed bottom-0 left-0 right-0 z-40 flex items-center justify-center gap-2 px-3 py-1.5
+                 bg-zinc-950/95 border-t border-zinc-800 shadow-lg
+                 animate-in slide-in-from-bottom duration-300"
+      role="complementary"
+      aria-label="Sponsor ad"
+    >
+      {/* 320×50 iframe — passive display, no redirect */}
+      <iframe
+        srcDoc={ADSTERRA_320x50_HTML}
+        width={320}
+        height={50}
+        title="Sponsor"
+        className="border-0 overflow-hidden shrink-0"
+        scrolling="no"
+        sandbox="allow-scripts allow-same-origin"
+      />
 
-          <button
-            type="button"
-            onClick={() => setIsOpen(false)}
-            className="p-1 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition cursor-pointer touch-manipulation"
-            aria-label="Close Ad"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-
-        {/* Small In-Site Ad Frame (No screen redirect) */}
-        <div className="py-2 flex items-center justify-center bg-zinc-900/50 rounded-xl border border-zinc-800/50 min-h-[60px] overflow-hidden">
-          <iframe
-            srcDoc={ADSTERRA_320x50_HTML}
-            width={320}
-            height={50}
-            title="In-Site Sponsor Ad"
-            className="border-0 overflow-hidden max-w-full"
-            scrolling="no"
-          />
-        </div>
-
-        {/* Visit Sponsor Optional Button */}
-        <a
-          href={SMARTLINK}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center justify-center gap-1.5 text-xs text-blue-400 hover:text-blue-300 font-medium py-1 transition"
-        >
-          <span>Explore Sponsor Deals</span>
-          <ExternalLink className="w-3 h-3" />
-        </a>
-
-        {/* Easy Crossable / Auto Countdown Button */}
-        <button
-          type="button"
-          onClick={() => setIsOpen(false)}
-          className="w-full py-2.5 px-4 rounded-xl text-xs font-semibold bg-zinc-800 hover:bg-zinc-700 text-zinc-200 transition cursor-pointer flex items-center justify-center gap-2"
-        >
-          <span>✕ Close & Continue</span>
-          {timeLeft > 0 && (
-            <span className="text-[10px] font-mono bg-zinc-900 px-1.5 py-0.5 rounded-md text-amber-400">
-              {timeLeft}s
-            </span>
-          )}
-        </button>
-
-      </div>
+      {/* Close button — users can dismiss instantly, no countdown */}
+      <button
+        type="button"
+        onClick={() => setIsVisible(false)}
+        className="p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition cursor-pointer shrink-0"
+        aria-label="Close ad"
+      >
+        <X className="w-4 h-4" />
+      </button>
     </div>
   )
 }

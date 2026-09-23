@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import {
   Music,
@@ -21,6 +21,8 @@ import {
   Monitor,
   Coffee,
   HelpCircle,
+  ListMusic,
+  SkipForward,
 } from 'lucide-react'
 import DonationSection from '@/components/DonationSection'
 
@@ -37,6 +39,50 @@ interface AnalyzedAudio {
   formats?: Array<{ quality?: string | number; label?: string; url: string; type?: string }>
 }
 
+type TrackStatus = 'idle' | 'loading' | 'done' | 'error'
+
+interface PlaylistTrackItem {
+  id: string
+  title: string
+  artist?: string
+  thumbnail?: string
+  duration?: string
+  youtubeUrl?: string
+  searchQuery?: string
+  status: TrackStatus
+  error?: string
+}
+
+interface PlaylistCollection {
+  source: 'youtube' | 'spotify'
+  kind: 'playlist' | 'album' | 'track'
+  title: string
+  thumbnail?: string
+  tracks: PlaylistTrackItem[]
+  truncated: boolean
+  note?: string
+}
+
+function looksLikePlaylistOrSpotify(raw: string): boolean {
+  const trimmed = raw.trim()
+  if (/^spotify:(playlist|album|track):/i.test(trimmed)) return true
+  try {
+    const u = new URL(trimmed)
+    const host = u.hostname.replace(/^www\./, '').toLowerCase()
+    if (host.includes('spotify')) return true
+    if (host.includes('youtube.com') || host === 'youtu.be') {
+      if (u.pathname.includes('/playlist')) return true
+      const list = u.searchParams.get('list') || ''
+      return /^(PL|OL|UU|FL)/i.test(list)
+    }
+  } catch {}
+  return false
+}
+
+function safeMp3Name(title: string) {
+  return `${title.slice(0, 40).replace(/[^\w\s.-]/gi, '_').trim() || 'audio'}.mp3`
+}
+
 export default function Mp3Page() {
   const [theme, setTheme] = useState<'light' | 'dark' | 'system'>('dark')
   const [url, setUrl] = useState('')
@@ -45,7 +91,11 @@ export default function Mp3Page() {
   const [error, setError] = useState('')
   const [successMsg, setSuccessMsg] = useState('')
   const [media, setMedia] = useState<AnalyzedAudio | null>(null)
+  const [playlist, setPlaylist] = useState<PlaylistCollection | null>(null)
+  const [isDownloadingAll, setIsDownloadingAll] = useState(false)
+  const [activeTrackId, setActiveTrackId] = useState<string | null>(null)
   const [selectedBitrate, setSelectedBitrate] = useState<'320k' | '192k' | '128k'>('320k')
+  const cancelAllRef = useRef(false)
 
   useEffect(() => {
     const savedTheme = (localStorage.getItem('unidownloader_theme') as any) || 'dark'
@@ -82,8 +132,36 @@ export default function Mp3Page() {
     setError('')
     setSuccessMsg('')
     setMedia(null)
+    setPlaylist(null)
+    setIsDownloadingAll(false)
+    cancelAllRef.current = true
 
     try {
+      if (looksLikePlaylistOrSpotify(trimmed)) {
+        const plRes = await fetch('/api/mp3/playlist', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url: trimmed }),
+        })
+        const plData = await plRes.json()
+        if (!plRes.ok) {
+          throw new Error(plData.error || 'Failed to load playlist')
+        }
+        setPlaylist({
+          source: plData.source,
+          kind: plData.kind,
+          title: plData.title,
+          thumbnail: plData.thumbnail,
+          truncated: !!plData.truncated,
+          note: plData.note,
+          tracks: (plData.tracks || []).map((t: any) => ({
+            ...t,
+            status: 'idle' as TrackStatus,
+          })),
+        })
+        return
+      }
+
       const res = await fetch('/api/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -123,6 +201,174 @@ export default function Mp3Page() {
     }
   }
 
+  const triggerBrowserDownload = async (res: Response, fallbackTitle: string) => {
+    const contentType = res.headers.get('content-type') || ''
+    if (contentType.includes('audio') || contentType.includes('octet-stream') || contentType.includes('video')) {
+      const blob = await res.blob()
+      const disposition = res.headers.get('content-disposition') || ''
+      let filename = safeMp3Name(fallbackTitle)
+      const filenameMatch = disposition.match(/filename="?([^"]+)"?/)
+      if (filenameMatch && filenameMatch[1]) filename = filenameMatch[1]
+
+      const blobUrl = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = blobUrl
+      a.download = filename
+      document.body.appendChild(a)
+      a.click()
+      setTimeout(() => {
+        window.URL.revokeObjectURL(blobUrl)
+        try {
+          document.body.removeChild(a)
+        } catch {}
+      }, 1000)
+      return filename
+    }
+
+    const data = await res.json()
+    if (data.redirectUrl) {
+      const filename = data.filename || safeMp3Name(fallbackTitle)
+      try {
+        const blobRes = await fetch(data.redirectUrl)
+        const blobData = await blobRes.blob()
+        const blobUrl = window.URL.createObjectURL(blobData)
+        const a = document.createElement('a')
+        a.href = blobUrl
+        a.download = filename
+        document.body.appendChild(a)
+        a.click()
+        setTimeout(() => {
+          window.URL.revokeObjectURL(blobUrl)
+          try {
+            document.body.removeChild(a)
+          } catch {}
+        }, 1000)
+      } catch {
+        const a = document.createElement('a')
+        a.href = data.redirectUrl
+        a.download = filename
+        document.body.appendChild(a)
+        a.click()
+      }
+      return filename
+    }
+    throw new Error('Audio conversion failed')
+  }
+
+  const convertYoutubeToMp3 = async (youtubeUrl: string, title: string) => {
+    const analyzed = await fetch('/api/analyze', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: youtubeUrl }),
+    })
+    const data = await analyzed.json()
+    if (!analyzed.ok) throw new Error(data.error || 'Failed to inspect YouTube audio')
+
+    const targetAudioUrl = data.audioUrl || data.downloadUrl
+    const payload = {
+      url: youtubeUrl,
+      quality: 'mp3',
+      mediaType: 'audio',
+      downloadUrl: targetAudioUrl,
+      title,
+      enhancement: {
+        enabled: true,
+        targetFormat: 'mp3',
+        audioBitrate: selectedBitrate,
+        trimEnabled: false,
+        normalizeAudio: false,
+        muteAudio: false,
+      },
+    }
+
+    const res = await fetch('/api/download', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+    if (!res.ok) {
+      const errJson = await res.json().catch(() => ({}))
+      throw new Error(errJson.error || 'Audio conversion failed')
+    }
+    return triggerBrowserDownload(res, title)
+  }
+
+  const updateTrack = (id: string, patch: Partial<PlaylistTrackItem>) => {
+    setPlaylist(prev => {
+      if (!prev) return prev
+      return {
+        ...prev,
+        tracks: prev.tracks.map(t => (t.id === id ? { ...t, ...patch } : t)),
+      }
+    })
+  }
+
+  const downloadPlaylistTrack = async (track: PlaylistTrackItem) => {
+    setActiveTrackId(track.id)
+    updateTrack(track.id, { status: 'loading', error: undefined })
+    try {
+      let youtubeUrl = track.youtubeUrl
+      if (!youtubeUrl) {
+        const q = track.searchQuery || [track.artist, track.title].filter(Boolean).join(' ')
+        const resolved = await fetch('/api/mp3/resolve-track', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query: q }),
+        })
+        const resolvedData = await resolved.json()
+        if (!resolved.ok) throw new Error(resolvedData.error || 'No YouTube match')
+        youtubeUrl = resolvedData.youtubeUrl
+        updateTrack(track.id, { youtubeUrl, thumbnail: resolvedData.thumbnail || track.thumbnail })
+      }
+      await convertYoutubeToMp3(youtubeUrl!, track.title)
+      updateTrack(track.id, { status: 'done' })
+      return true
+    } catch (err: any) {
+      updateTrack(track.id, { status: 'error', error: err?.message || 'Failed' })
+      return false
+    } finally {
+      setActiveTrackId(null)
+    }
+  }
+
+  const handleDownloadNext = async () => {
+    if (!playlist) return
+    const next = playlist.tracks.find(t => t.status === 'idle' || t.status === 'error')
+    if (!next) {
+      setSuccessMsg('All songs in this list are already downloaded.')
+      return
+    }
+    setError('')
+    setSuccessMsg('')
+    const ok = await downloadPlaylistTrack(next)
+    if (ok) setSuccessMsg(`Saved MP3: ${next.title}`)
+    else setError(next.title + ' failed. You can skip and download next.')
+  }
+
+  const handleDownloadAll = async () => {
+    if (!playlist) return
+    cancelAllRef.current = false
+    setIsDownloadingAll(true)
+    setError('')
+    setSuccessMsg('')
+    let done = 0
+    let failed = 0
+    const queue = playlist.tracks.filter(t => t.status !== 'done')
+    for (const track of queue) {
+      if (cancelAllRef.current) break
+      const ok = await downloadPlaylistTrack(track)
+      if (ok) done += 1
+      else failed += 1
+      await new Promise(r => setTimeout(r, 800))
+    }
+    setIsDownloadingAll(false)
+    if (cancelAllRef.current) {
+      setSuccessMsg(`Stopped. Saved ${done} MP3${done === 1 ? '' : 's'}.`)
+    } else {
+      setSuccessMsg(`Finished. Saved ${done} MP3${done === 1 ? '' : 's'}${failed ? `, ${failed} failed` : ''}.`)
+    }
+  }
+
   const handleDownload = async () => {
     if (!media) return
 
@@ -131,14 +377,11 @@ export default function Mp3Page() {
     setSuccessMsg('')
 
     try {
-      const targetAudioUrl = media.audioUrl || media.downloadUrl
-
-      // Direct MP3 fast conversion with high fidelity audio encoding
       const payload = {
         url: media.originalUrl,
         quality: 'mp3',
         mediaType: 'audio',
-        downloadUrl: targetAudioUrl,
+        downloadUrl: media.audioUrl || media.downloadUrl,
         title: media.title,
         enhancement: {
           enabled: true,
@@ -155,61 +398,12 @@ export default function Mp3Page() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       })
-
       if (!res.ok) {
         const errJson = await res.json().catch(() => ({}))
         throw new Error(errJson.error || 'Audio conversion failed')
       }
-
-      const contentType = res.headers.get('content-type') || ''
-      if (contentType.includes('audio') || contentType.includes('octet-stream') || contentType.includes('video')) {
-        const blob = await res.blob()
-        const disposition = res.headers.get('content-disposition') || ''
-        let filename = `${media.title.slice(0, 35).replace(/[^\w\s.-]/gi, '_')}.mp3`
-        const filenameMatch = disposition.match(/filename="?([^"]+)"?/)
-        if (filenameMatch && filenameMatch[1]) {
-          filename = filenameMatch[1]
-        }
-
-        const blobUrl = window.URL.createObjectURL(blob)
-        const a = document.createElement('a')
-        a.href = blobUrl
-        a.download = filename
-        document.body.appendChild(a)
-        a.click()
-        setTimeout(() => {
-          window.URL.revokeObjectURL(blobUrl)
-          try { document.body.removeChild(a) } catch {}
-        }, 1000)
-
-        setSuccessMsg(`Downloaded successfully: ${filename}`)
-      } else {
-        const data = await res.json()
-        if (data.redirectUrl) {
-          const filename = data.filename || `${media.title.slice(0, 35)}.mp3`
-          try {
-            const blobRes = await fetch(data.redirectUrl)
-            const blobData = await blobRes.blob()
-            const blobUrl = window.URL.createObjectURL(blobData)
-            const a = document.createElement('a')
-            a.href = blobUrl
-            a.download = filename
-            document.body.appendChild(a)
-            a.click()
-            setTimeout(() => {
-              window.URL.revokeObjectURL(blobUrl)
-              try { document.body.removeChild(a) } catch {}
-            }, 1000)
-          } catch {
-            const a = document.createElement('a')
-            a.href = data.redirectUrl
-            a.download = filename
-            document.body.appendChild(a)
-            a.click()
-          }
-          setSuccessMsg(`Downloaded successfully: ${filename}`)
-        }
-      }
+      const filename = await triggerBrowserDownload(res, media.title)
+      setSuccessMsg(`Downloaded successfully: ${filename}`)
     } catch (err: any) {
       setError(err?.message || 'Download failed. Please try again.')
     } finally {
@@ -356,6 +550,7 @@ export default function Mp3Page() {
           <p className="text-zinc-600 dark:text-zinc-400 text-sm sm:text-base max-w-2xl mx-auto leading-relaxed">
             Convert any video or music link into crystal-clear 320kbps MP3 audio in seconds.
             Works with YouTube, TikTok, Instagram Reels, Facebook, SoundCloud, and Reddit.
+            Paste a YouTube playlist or Spotify playlist/album/track to list songs and download them one by one.
           </p>
         </section>
 
@@ -369,7 +564,7 @@ export default function Mp3Page() {
               value={url}
               onChange={e => setUrl(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && handleAnalyze()}
-              placeholder="Paste any YouTube, TikTok, Instagram, or Music link..."
+              placeholder="Paste YouTube, playlist, Spotify, TikTok, or music link..."
               className="w-full bg-transparent px-3 py-2 text-xs sm:text-sm text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 dark:placeholder:text-zinc-500 focus:outline-none"
             />
 
@@ -435,6 +630,152 @@ export default function Mp3Page() {
             <CheckCircle2 className="w-4 h-4 shrink-0" />
             <span>{successMsg}</span>
           </div>
+        )}
+
+        {playlist && (
+          <section className="bg-white dark:bg-zinc-900/70 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-4 sm:p-6 shadow-xl space-y-4 animate-in fade-in-50 duration-200">
+            <div className="flex items-start gap-3">
+              <div className="w-16 h-16 rounded-xl overflow-hidden bg-zinc-100 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 shrink-0 flex items-center justify-center">
+                {playlist.thumbnail ? (
+                  <img src={playlist.thumbnail} alt="" className="w-full h-full object-cover" />
+                ) : (
+                  <ListMusic className="w-7 h-7 text-emerald-500" />
+                )}
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-[10px] font-mono uppercase tracking-wider text-emerald-600 dark:text-emerald-400 font-bold">
+                  {playlist.source === 'spotify' ? 'Spotify → YouTube MP3' : 'YouTube playlist'}
+                </p>
+                <h3 className="font-bold text-sm sm:text-base text-zinc-900 dark:text-zinc-100 line-clamp-2">
+                  {playlist.title}
+                </h3>
+                <p className="text-xs text-zinc-500 mt-0.5">
+                  {playlist.tracks.length} song{playlist.tracks.length === 1 ? '' : 's'}
+                  {playlist.truncated ? ' (first 50)' : ''}
+                  {' · '}
+                  {playlist.tracks.filter(t => t.status === 'done').length} saved
+                </p>
+              </div>
+            </div>
+
+            {playlist.note && (
+              <p className="text-[11px] text-zinc-500 dark:text-zinc-400 leading-relaxed border border-zinc-200 dark:border-zinc-800 rounded-xl px-3 py-2 bg-zinc-50 dark:bg-zinc-950/40">
+                {playlist.note}
+              </p>
+            )}
+
+            <div className="space-y-1.5">
+              <label className="text-[11px] font-semibold text-zinc-600 dark:text-zinc-400 uppercase tracking-wider block font-mono">
+                MP3 bitrate for this list
+              </label>
+              <div className="grid grid-cols-3 gap-2.5">
+                {[
+                  { id: '320k', label: '320 kbps', hint: 'Studio HD' },
+                  { id: '192k', label: '192 kbps', hint: 'Standard' },
+                  { id: '128k', label: '128 kbps', hint: 'Compact' },
+                ].map(b => (
+                  <button
+                    key={b.id}
+                    type="button"
+                    onClick={() => setSelectedBitrate(b.id as any)}
+                    className={`p-2.5 rounded-xl border text-left transition cursor-pointer ${
+                      selectedBitrate === b.id
+                        ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 ring-1 ring-emerald-500/40'
+                        : 'border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950/40 text-zinc-700 dark:text-zinc-400'
+                    }`}
+                  >
+                    <span className="font-bold text-xs block">{b.label}</span>
+                    <span className="text-[10px] text-zinc-500">{b.hint}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex flex-col sm:flex-row gap-2">
+              <button
+                type="button"
+                onClick={handleDownloadNext}
+                disabled={isDownloadingAll || !!activeTrackId}
+                className="flex-1 py-3 px-4 rounded-xl font-bold text-sm bg-zinc-900 dark:bg-white text-white dark:text-zinc-950 transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+              >
+                <SkipForward className="w-4 h-4" />
+                Download next
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (isDownloadingAll) {
+                    cancelAllRef.current = true
+                    return
+                  }
+                  void handleDownloadAll()
+                }}
+                disabled={!!activeTrackId && !isDownloadingAll}
+                className="flex-1 py-3 px-4 rounded-xl font-bold text-sm bg-gradient-to-r from-emerald-500 via-teal-400 to-cyan-500 text-zinc-950 transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 shadow-md shadow-emerald-500/20"
+              >
+                {isDownloadingAll ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-zinc-950 border-t-transparent rounded-full animate-spin" />
+                    Stop
+                  </>
+                ) : (
+                  <>
+                    <Download className="w-4 h-4 stroke-[2.5]" />
+                    Download all one by one
+                  </>
+                )}
+              </button>
+            </div>
+
+            <ul className="divide-y divide-zinc-200 dark:divide-zinc-800 max-h-[420px] overflow-y-auto rounded-xl border border-zinc-200 dark:border-zinc-800">
+              {playlist.tracks.map((track, idx) => (
+                <li key={track.id + idx} className="flex items-center gap-2.5 p-2.5 bg-white dark:bg-zinc-950/30">
+                  <span className="w-6 text-[11px] font-mono text-zinc-400 text-right shrink-0">{idx + 1}</span>
+                  <div className="w-10 h-10 rounded-lg overflow-hidden bg-zinc-100 dark:bg-zinc-900 shrink-0 flex items-center justify-center">
+                    {track.thumbnail ? (
+                      <img src={track.thumbnail} alt="" className="w-full h-full object-cover" />
+                    ) : (
+                      <Music className="w-4 h-4 text-emerald-500" />
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs font-semibold text-zinc-800 dark:text-zinc-100 truncate">{track.title}</p>
+                    <p className="text-[11px] text-zinc-500 truncate">
+                      {track.artist || 'Unknown artist'}
+                      {track.duration ? ` · ${track.duration}` : ''}
+                      {track.status === 'error' && track.error ? ` · ${track.error}` : ''}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={isDownloadingAll || !!activeTrackId || track.status === 'loading'}
+                    onClick={() => {
+                      setError('')
+                      setSuccessMsg('')
+                      void downloadPlaylistTrack(track).then(ok => {
+                        if (ok) setSuccessMsg(`Saved MP3: ${track.title}`)
+                      })
+                    }}
+                    className={`shrink-0 px-2.5 py-1.5 rounded-lg text-[11px] font-bold border cursor-pointer disabled:opacity-50 ${
+                      track.status === 'done'
+                        ? 'border-emerald-500/40 text-emerald-600 bg-emerald-50 dark:bg-emerald-500/10'
+                        : track.status === 'error'
+                          ? 'border-red-400/40 text-red-600'
+                          : 'border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-200'
+                    }`}
+                  >
+                    {track.status === 'loading' || activeTrackId === track.id
+                      ? 'Saving…'
+                      : track.status === 'done'
+                        ? 'Saved'
+                        : track.status === 'error'
+                          ? 'Retry'
+                          : 'MP3'}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </section>
         )}
 
         {/* Analyzed Media Card - Pure & Fast without Enhancement Bloat */}
@@ -538,7 +879,7 @@ export default function Mp3Page() {
               </div>
               <h3 className="font-bold text-sm text-zinc-800 dark:text-zinc-200">Copy Link</h3>
               <p className="text-xs text-zinc-600 dark:text-zinc-400">
-                Copy the URL of any video or song from YouTube, TikTok, Instagram, or Facebook.
+                Copy the URL of any video, YouTube playlist, or Spotify playlist from YouTube, TikTok, Instagram, Facebook, or Spotify.
               </p>
             </div>
 
@@ -617,7 +958,7 @@ export default function Mp3Page() {
               },
               {
                 q: 'Which platforms are supported?',
-                a: 'You can extract MP3 audio from YouTube, TikTok videos & sounds, Instagram Reels, Facebook videos, SoundCloud tracks, Twitter/X clips, and Reddit videos.',
+                a: 'You can extract MP3 audio from YouTube, TikTok videos & sounds, Instagram Reels, Facebook videos, SoundCloud tracks, Twitter/X clips, and Reddit videos. YouTube playlists and Spotify playlist/album/track links list songs so you can download them one by one (Spotify titles are matched on YouTube).',
               },
             ].map((faq, i) => (
               <details key={i} className="p-3.5 rounded-xl border border-zinc-200 dark:border-zinc-850 bg-white dark:bg-zinc-900/40 text-xs sm:text-sm group hover:border-zinc-300 dark:hover:border-zinc-700 transition shadow-xs">
