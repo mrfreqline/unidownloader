@@ -419,12 +419,18 @@ export default function MediaCard({
         )}
       </div>
 
-      {/* High-Definition In-Browser Streaming Player (Zero Buffering Edge Player - Internal Stream Proxy) */}
+      {/* High-Definition In-Browser Streaming Player (Zero Buffering Edge Player - Direct CDN Offload) */}
       {activeTab === 'watch' && (
         <div className="space-y-3 animate-in fade-in-50 duration-200">
           <div className="relative aspect-video w-full rounded-xl overflow-hidden bg-black border border-zinc-200 dark:border-zinc-800 shadow-inner">
             <video
-              src={`/api/stream-proxy?url=${encodeURIComponent(media.streamUrl || media.downloadUrl || media.originalUrl)}&quality=stream`}
+              src={
+                (media.streamUrl && media.streamUrl.startsWith('http') && !media.streamUrl.includes('youtube.com') && !media.streamUrl.includes('youtu.be'))
+                  ? media.streamUrl
+                  : (media.downloadUrl && media.downloadUrl.startsWith('http') && !media.downloadUrl.includes('youtube.com'))
+                  ? media.downloadUrl
+                  : `/api/stream-proxy?url=${encodeURIComponent(media.streamUrl || media.downloadUrl || media.originalUrl)}&quality=stream`
+              }
               controls
               playsInline
               className="w-full h-full object-contain"
@@ -436,7 +442,7 @@ export default function MediaCard({
           <div className="flex items-center justify-between text-xs text-zinc-500 font-mono px-1">
             <span className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400 font-semibold">
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              Internal Stream Proxy (HTML5 Video Stream)
+              Direct CDN High-Speed Stream
             </span>
             {media.fileSize && <span>File Size: {media.fileSize}</span>}
           </div>
@@ -686,7 +692,7 @@ export default function MediaCard({
               {/* Direct App Action Buttons */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1">
                 <a
-                  href="/apps/A2Z-Downloader-Setup.exe"
+                  href="https://github.com/mrfreqline/unidownloader/releases/latest/download/A2Z-Downloader-Setup.exe"
                   download="A2Z-Downloader-Setup.exe"
                   className="py-2.5 px-3 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-sm transition"
                 >
@@ -694,7 +700,7 @@ export default function MediaCard({
                   <span>Download PC (.EXE)</span>
                 </a>
                 <a
-                  href="/apps/A2Z-Downloader.apk"
+                  href="https://github.com/mrfreqline/unidownloader/releases/latest/download/A2Z-Downloader.apk"
                   download="A2Z-Downloader.apk"
                   className="py-2.5 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-sm transition"
                 >
