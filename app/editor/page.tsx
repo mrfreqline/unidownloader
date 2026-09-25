@@ -168,16 +168,10 @@ export default function StudioEditorPage() {
 
       if (rawAudio) {
         const decodedAudio = decodeURIComponent(rawAudio)
-        if (decodedAudio.startsWith('http') && !decodedAudio.includes('/api/stream-proxy')) {
-          setAudioSrc(`/api/stream-proxy?url=${encodeURIComponent(decodedAudio)}&quality=audio`)
-        } else {
-          setAudioSrc(decodedAudio)
-        }
+        setAudioSrc(decodedAudio)
       } else if (rawOrig) {
         const decodedOrig = decodeURIComponent(rawOrig)
-        if (decodedOrig.startsWith('http')) {
-          setAudioSrc(`/api/stream-proxy?url=${encodeURIComponent(decodedOrig)}&quality=audio`)
-        }
+        setAudioSrc(decodedOrig)
       }
 
       if (rawOrig) {
@@ -190,11 +184,7 @@ export default function StudioEditorPage() {
 
       if (rawSrc) {
         const decodedSrc = decodeURIComponent(rawSrc)
-        if (decodedSrc.startsWith('http') && !decodedSrc.includes('/api/stream-proxy')) {
-          setVideoSrc(`/api/stream-proxy?url=${encodeURIComponent(decodedSrc)}&quality=${encodeURIComponent(rawQuality)}`)
-        } else {
-          setVideoSrc(decodedSrc)
-        }
+        setVideoSrc(decodedSrc)
       }
       if (rawTitle) {
         setVideoTitle(decodeURIComponent(rawTitle))
