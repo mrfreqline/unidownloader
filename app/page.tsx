@@ -17,6 +17,9 @@ import PwaInstallPrompt from '@/components/PwaInstallPrompt'
 import AppDownloadModal from '@/components/AppDownloadModal'
 import SeoContent from '@/components/SeoContent'
 import DonationSection from '@/components/DonationSection'
+import ClipView from '@/components/ClipView'
+import AccountView from '@/components/AccountView'
+import BottomNav, { TabType } from '@/components/BottomNav'
 import { FolderResult } from '@/lib/downloader/terabox-resolver'
 import {
   Link2,
@@ -40,6 +43,7 @@ const AD_SMARTLINK = 'https://www.profitableratecpmnetwork.com/gvwaq8hih?key=3a2
 
 export default function Home() {
   const [theme, setTheme] = useState<'light' | 'dark' | 'system'>('dark')
+  const [activeTab, setActiveTab] = useState<TabType>('home')
 
   // Opens the ad in a background new tab exactly once per analyze — no popunder, no interruption
   const openAdOnce = () => {
@@ -73,6 +77,7 @@ export default function Home() {
   const [downloadSuccessMsg, setDownloadSuccessMsg] = useState<string | null>(null)
   const [maintenanceMsg, setMaintenanceMsg] = useState<string | null>(null)
   const [directDownloadLink, setDirectDownloadLink] = useState<{ url: string; filename: string } | null>(null)
+  const [latestClipBlobUrl, setLatestClipBlobUrl] = useState<string | null>(null)
 
 
   useEffect(() => {
@@ -125,6 +130,13 @@ export default function Home() {
         }
       })
       .catch(() => {})
+
+    if (typeof window !== 'undefined') {
+      const hash = window.location.hash.replace('#', '')
+      if (['home', 'viewer', 'clip', 'mp3', 'account'].includes(hash)) {
+        setActiveTab(hash as TabType)
+      }
+    }
 
     // Check live Supabase authentication session
     if (supabase) {
@@ -433,9 +445,11 @@ export default function Home() {
     format: string,
     mediaType: 'video' | 'audio' | 'image',
     enhancement: EnhancementSettings,
-    downloadUrl?: string
+    downloadUrl?: string,
+    customTitle?: string
   ) => {
-    if (!analyzedMedia) return
+    const targetUrl = downloadUrl || (analyzedMedia ? (analyzedMedia.downloadUrl || analyzedMedia.originalUrl) : url)
+    if (!targetUrl && !analyzedMedia) return
 
     // IP-based guest trial limit check
     if (!isLoggedIn && guestTrials <= 0 && mediaType === 'video') {
@@ -461,12 +475,12 @@ export default function Home() {
       const origin = typeof window !== 'undefined' ? window.location.origin : ''
       let endpoint = `${origin}/api/download`
       let payload: any = {
-        url: analyzedMedia.originalUrl,
+        url: analyzedMedia?.originalUrl || targetUrl,
         quality: format,
         mediaType,
         enhancement,
-        downloadUrl: downloadUrl || analyzedMedia.downloadUrl,
-        title: analyzedMedia.title,
+        downloadUrl: targetUrl,
+        title: customTitle || analyzedMedia?.title || 'media',
       }
 
       if (mediaType === 'image') {
@@ -474,20 +488,68 @@ export default function Home() {
         let targetImg = downloadUrl
         if (
           !targetImg ||
-          (analyzedMedia.fileType !== 'image' && targetImg === analyzedMedia.downloadUrl) ||
+          (analyzedMedia?.fileType !== 'image' && targetImg === analyzedMedia?.downloadUrl) ||
           targetImg.includes('.mp4') ||
           targetImg.includes('/o1/v/') ||
           targetImg.includes('rapidcdn.app/v2')
         ) {
           targetImg =
-            analyzedMedia.thumbnail ||
-            (analyzedMedia.images && analyzedMedia.images[0]?.url) ||
-            analyzedMedia.downloadUrl
+            analyzedMedia?.thumbnail ||
+            (analyzedMedia?.images && analyzedMedia?.images[0]?.url) ||
+            analyzedMedia?.downloadUrl ||
+            targetUrl
         }
         payload = {
           thumbnailUrl: targetImg,
-          title: analyzedMedia.title,
+          title: analyzedMedia?.title || 'image',
         }
+      }
+
+      if (!enhancement?.trimEnabled && mediaType !== 'image') {
+        const queryParams = new URLSearchParams({
+          url: analyzedMedia?.originalUrl || targetUrl,
+          quality: format,
+          mediaType,
+          title: customTitle || analyzedMedia?.title || 'media',
+          downloadUrl: targetUrl,
+        })
+        const downloadHref = `${endpoint}?${queryParams.toString()}`
+
+        // Trigger native browser streaming download directly to disk
+        const a = document.createElement('a')
+        a.href = downloadHref
+        a.download = `${(customTitle || analyzedMedia?.title || 'media').slice(0, 35)}.${mediaType === 'audio' ? 'mp3' : 'mp4'}`
+        document.body.appendChild(a)
+        a.click()
+        document.body.removeChild(a)
+
+        // Deduct tokens / record download
+        if (mediaType === 'video') {
+          if (!isLoggedIn && guestTrials > 0 && !format.includes('4K')) {
+            deductGuestTrial()
+          } else if (analyzedMedia) {
+            const cost = format.includes('4K') ? 10 : format.includes('1080p') ? 5 : 2
+            await deductTokens(cost, {
+              url: analyzedMedia.originalUrl,
+              title: analyzedMedia.title,
+              format,
+              mediaType,
+              thumbnailUrl: analyzedMedia.thumbnail,
+            })
+          }
+        } else if (isLoggedIn && analyzedMedia) {
+          await recordFreeDownload({
+            url: analyzedMedia.originalUrl,
+            title: analyzedMedia.title,
+            format: 'mp3',
+            mediaType,
+            thumbnailUrl: analyzedMedia.thumbnail,
+          })
+        }
+
+        setDownloadSuccessMsg(`Download initiated: ${customTitle || analyzedMedia?.title || 'media'}`)
+        setIsDownloading(false)
+        return
       }
 
       const res = await fetch(endpoint, {
@@ -515,24 +577,24 @@ export default function Home() {
         if (filenameMatch && filenameMatch[1]) {
           filename = filenameMatch[1]
         } else {
-          filename = `${analyzedMedia.title.slice(0, 30)}.${
+          filename = `${(analyzedMedia?.title || 'media_clip').slice(0, 30)}.${
             mediaType === 'audio' ? 'mp3' : mediaType === 'image' ? 'jpg' : 'mp4'
           }`
         }
 
         const blobUrl = window.URL.createObjectURL(blob)
+        setLatestClipBlobUrl(blobUrl)
         const a = document.createElement('a')
         a.href = blobUrl
         a.download = filename
         document.body.appendChild(a)
         a.click()
         document.body.removeChild(a)
-        window.URL.revokeObjectURL(blobUrl)
 
         if (mediaType === 'video') {
           if (!isLoggedIn && guestTrials > 0 && !format.includes('4K')) {
             deductGuestTrial()
-          } else {
+          } else if (analyzedMedia) {
             const cost = format.includes('4K') ? 10 : format.includes('1080p') ? 5 : 2
             await deductTokens(cost, {
               url: analyzedMedia.originalUrl,
@@ -544,7 +606,7 @@ export default function Home() {
           }
         } else {
           // Audio & image downloads are free
-          if (isLoggedIn) {
+          if (isLoggedIn && analyzedMedia) {
             await recordFreeDownload({
               url: analyzedMedia.originalUrl,
               title: analyzedMedia.title,
@@ -591,7 +653,7 @@ export default function Home() {
           if (mediaType === 'video') {
             if (!isLoggedIn && guestTrials > 0 && !format.includes('4K')) {
               deductGuestTrial()
-            } else if (isLoggedIn) {
+            } else if (isLoggedIn && analyzedMedia) {
               const cost = format.includes('4K') ? 10 : format.includes('1080p') ? 5 : 2
               await deductTokens(cost, {
                 url: analyzedMedia.originalUrl,
@@ -625,10 +687,26 @@ export default function Home() {
     { name: 'Direct Movies', type: '.mp4 / .mkv / .webm' },
   ]
 
+  const handleTabChange = (tab: TabType) => {
+    if (tab === 'viewer') {
+      window.location.href = '/anonymous-viewer'
+      return
+    }
+    if (tab === 'mp3') {
+      window.location.href = '/mp3'
+      return
+    }
+    setActiveTab(tab)
+    if (typeof window !== 'undefined') {
+      window.location.hash = tab
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+    }
+  }
+
   return (
-    <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 flex flex-col font-sans transition-colors duration-150 overflow-x-hidden">
+    <div className="min-h-screen bg-zinc-50 dark:bg-[#090b0e] text-zinc-900 dark:text-zinc-100 flex flex-col font-sans transition-colors duration-150 overflow-x-hidden bg-ambient">
       
-      {/* Precision Top Navbar */}
+      {/* Precision Top Navbar with Desktop Tabs */}
       <Navbar
         tokens={tokens}
         onOpenTokenModal={() => setIsTokenModalOpen(true)}
@@ -649,6 +727,8 @@ export default function Home() {
         }}
         theme={theme}
         onThemeChange={applyTheme}
+        activeTab={activeTab}
+        onSelectTab={handleTabChange}
       />
 
       {/* Small bottom bar ad — passive, no redirect, user can dismiss */}
@@ -657,63 +737,44 @@ export default function Home() {
       {/* PWA Mobile & Desktop Install Prompt */}
       <PwaInstallPrompt />
 
-      {/* Main Container: Optimized padding for mobile screens */}
-      <main className="flex-1 max-w-4xl w-full mx-auto px-3.5 sm:px-6 py-6 sm:py-10 space-y-6 sm:space-y-8">
+      {/* Main Container: Optimized padding for mobile screens with bottom safe spacing */}
+      <main className="flex-1 max-w-4xl w-full mx-auto px-3.5 sm:px-6 py-6 sm:py-10 space-y-6 sm:space-y-8 pb-24 md:pb-12">
         
-        {/* Hero Section */}
-        <div className="text-center space-y-3 pt-2 sm:pt-4">
-          <div className="flex justify-center">
-            <div className="relative w-16 h-16 sm:w-20 sm:h-20 rounded-2xl overflow-hidden shadow-2xl ring-2 ring-emerald-500/20 bg-black animate-in zoom-in-95 duration-200">
-              <img
-                src="/logo-icon.jpg"
-                alt="A2Z Downloader Logo"
-                className="w-full h-full object-contain"
-              />
+        {/* TAB 1: DOWNLOADER (HOME) */}
+        {activeTab === 'home' && (
+          <>
+            {/* Hero Section */}
+            <div className="text-center space-y-3 pt-2 sm:pt-4 animate-in fade-in duration-200">
+              <div className="flex justify-center">
+                <div className="relative w-16 h-16 sm:w-20 sm:h-20 rounded-2xl overflow-hidden shadow-2xl ring-2 ring-emerald-500/20 bg-black animate-in zoom-in-95 duration-200">
+                  <img
+                    src="/logo-icon.jpg"
+                    alt="A2Z Downloader Logo"
+                    className="w-full h-full object-contain"
+                  />
+                </div>
+              </div>
+
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-[11px] sm:text-xs font-mono bg-zinc-100 dark:bg-zinc-900/90 text-zinc-600 dark:text-zinc-400 border border-zinc-200 dark:border-white/10 shadow-xs">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(22,224,168,0.7)] animate-pulse shrink-0" />
+                <span>Universal Media Protocol • Zero Retention Active</span>
+              </div>
+
+              <h1 className="text-3xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight text-zinc-900 dark:text-white leading-tight font-heading">
+                <span className="bg-gradient-to-r from-emerald-400 via-teal-300 to-cyan-400 bg-clip-text text-transparent">
+                  A2Z
+                </span>{' '}
+                Downloader
+              </h1>
+
+              <p className="text-sm sm:text-base font-semibold text-zinc-700 dark:text-zinc-300">
+                Download Media. Simple & Fast.
+              </p>
+
+              <p className="text-xs sm:text-sm text-zinc-500 max-w-xl mx-auto leading-relaxed px-2">
+                Download any video, movie, or audio in the entire world. TikTok, Instagram, YouTube, Facebook, Twitter/X, and direct links in 1 click.
+              </p>
             </div>
-          </div>
-
-          <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] sm:text-xs font-mono bg-zinc-100 dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400 border border-zinc-200 dark:border-zinc-800">
-            <Zap className="w-3 h-3 text-emerald-500 shrink-0" />
-            Universal Media Protocol • Zero Retention Active
-          </div>
-
-          <h1 className="text-3xl sm:text-5xl font-black tracking-tight text-zinc-900 dark:text-zinc-100 leading-tight">
-            <span className="bg-gradient-to-r from-emerald-400 via-teal-300 to-cyan-400 bg-clip-text text-transparent">
-              A2Z
-            </span>{' '}
-            Downloader
-          </h1>
-
-          <p className="text-sm sm:text-base font-semibold text-zinc-700 dark:text-zinc-300">
-            Download Media. Simple & Fast.
-          </p>
-
-          <p className="text-xs sm:text-sm text-zinc-500 max-w-xl mx-auto leading-relaxed px-2">
-            Download any video, movie, or audio in the entire world. TikTok, Instagram, YouTube, Facebook, Twitter/X, and direct links in 1 click.
-          </p>
-
-          {/* Quick App Download Shortcuts */}
-          <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
-            <a
-              href="/apps/A2Z-Downloader-Setup.exe"
-              download="A2Z-Downloader-Setup.exe"
-              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-[11px] sm:text-xs font-semibold bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-blue-400 border border-blue-500/30 transition shadow-xs cursor-pointer touch-manipulation"
-              title="Download Windows .EXE Installer"
-            >
-              <Monitor className="w-3.5 h-3.5" />
-              <span>Windows App (.exe)</span>
-            </a>
-            <button
-              type="button"
-              onClick={() => setIsAppModalOpen(true)}
-              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-[11px] sm:text-xs font-semibold bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 transition shadow-xs cursor-pointer touch-manipulation"
-              title="Install Mobile App (.apk / WebAPK)"
-            >
-              <Smartphone className="w-3.5 h-3.5" />
-              <span>Phone App (.apk)</span>
-            </button>
-          </div>
-        </div>
 
         {/* Mobile In-App Browser Assistant Banner */}
         {isInAppBrowser && (
@@ -919,6 +980,7 @@ export default function Home() {
               setIsAuthModalOpen(true)
             }}
             onRequireTokens={() => setIsTokenModalOpen(true)}
+            onOpenEnhance={() => handleTabChange('clip')}
           />
         )}
 
@@ -946,58 +1008,54 @@ export default function Home() {
           </div>
         )}
 
-        {/* Ephemeral Zero-Retention Storage Banner */}
-        <EphemeralBanner />
-
-        {/* Engineering Highlights */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-2">
-          <div className="p-4 rounded-xl border border-zinc-200 dark:border-zinc-800/80 bg-white dark:bg-zinc-950 space-y-1.5">
-            <div className="w-7 h-7 rounded-lg bg-zinc-100 dark:bg-zinc-900 flex items-center justify-center text-zinc-700 dark:text-zinc-300">
-              <Sliders className="w-3.5 h-3.5" />
-            </div>
-            <h3 className="text-xs font-semibold text-zinc-900 dark:text-zinc-100">
-              Media Enhancement
-            </h3>
-            <p className="text-[11px] text-zinc-500 leading-relaxed">
-              Optional trim, container conversion (MP4, WebM, MKV, GIF, MP3), and audio normalization before downloading.
-            </p>
-          </div>
-
-          <div className="p-4 rounded-xl border border-zinc-200 dark:border-zinc-800/80 bg-white dark:bg-zinc-950 space-y-1.5">
-            <div className="w-7 h-7 rounded-lg bg-zinc-100 dark:bg-zinc-900 flex items-center justify-center text-zinc-700 dark:text-zinc-300">
-              <HardDrive className="w-3.5 h-3.5" />
-            </div>
-            <h3 className="text-xs font-semibold text-zinc-900 dark:text-zinc-100">
-              Zero Server Retention
-            </h3>
-            <p className="text-[11px] text-zinc-500 leading-relaxed">
-              Streams directly to client memory. Temporary files are unlinked on transfer or session exit to guarantee zero clutter.
-            </p>
-          </div>
-
-          <div className="p-4 rounded-xl border border-zinc-200 dark:border-zinc-800/80 bg-white dark:bg-zinc-950 space-y-1.5">
-            <div className="w-7 h-7 rounded-lg bg-zinc-100 dark:bg-zinc-900 flex items-center justify-center text-zinc-700 dark:text-zinc-300">
-              <Zap className="w-3.5 h-3.5" />
-            </div>
-            <h3 className="text-xs font-semibold text-zinc-900 dark:text-zinc-100">
-              Token Economy
-            </h3>
-            <p className="text-[11px] text-zinc-500 leading-relaxed">
-              Free unlimited audio & thumbnails. 3 free video trials. Earn extra video tokens effortlessly by watching short sponsor ads.
-            </p>
-          </div>
-        </div>
-
-        {/* Donation / Buy Us a Coffee Section */}
-        <DonationSection />
-
-        {/* SEO Informational & FAQ Section */}
-        <SeoContent />
-
         {/* Bottom Sponsor Ad Banner */}
         <AdBanner slot="bottom" />
+          </>
+        )}
+
+        {/* TAB 2: MEDIA CLIP / ENHANCER */}
+        {activeTab === 'clip' && (
+          <ClipView
+            initialUrl={url}
+            initialTitle={analyzedMedia?.title}
+            initialDuration={analyzedMedia?.durationSeconds}
+            initialFileSize={analyzedMedia?.fileSize}
+            onDownloadClip={(format, enh, targetUrl, title) => {
+              const mType = format === 'mp3' || enh.targetFormat === 'mp3' ? 'audio' : 'video'
+              handleDownload(format, mType, enh, targetUrl, title)
+            }}
+            isDownloading={isDownloading}
+            downloadMsg={downloadSuccessMsg}
+            clippedBlobUrl={latestClipBlobUrl}
+          />
+        )}
+
+        {/* TAB 3: ACCOUNT & SETTINGS */}
+        {activeTab === 'account' && (
+          <AccountView
+            tokens={tokens}
+            guestTrials={guestTrials}
+            isLoggedIn={isLoggedIn}
+            userEmail={userEmail}
+            theme={theme}
+            onThemeChange={applyTheme}
+            onOpenAuthModal={() => {
+              setAuthReason('manual')
+              setIsAuthModalOpen(true)
+            }}
+            onOpenTokenModal={() => setIsTokenModalOpen(true)}
+            onOpenAppModal={() => setIsAppModalOpen(true)}
+          />
+        )}
 
       </main>
+
+      {/* Native App-Style Mobile Bottom Navigation Bar */}
+      <BottomNav
+        activeTab={activeTab}
+        onSelectTab={handleTabChange}
+        isLoggedIn={isLoggedIn}
+      />
 
       {/* Minimal Footer */}
       <footer className="border-t border-zinc-200 dark:border-zinc-800/80 py-6 text-center text-xs text-zinc-400 font-mono">
@@ -1006,22 +1064,27 @@ export default function Home() {
             <img src="/logo-icon.jpg" alt="A2Z" className="w-4 h-4 rounded-md object-cover inline" />
             <span>A2Z Downloader • Download Media. Simple & Fast.</span>
           </div>
-          <div className="flex items-center gap-4 text-[11px]">
-            <a
-              href="#donate"
-              className="text-amber-600 dark:text-amber-400 font-semibold hover:underline flex items-center gap-1 transition"
+          <div className="flex flex-wrap items-center justify-center gap-3 sm:gap-4 text-[11px]">
+            <button
+              onClick={() => handleTabChange('account')}
+              className="text-emerald-600 dark:text-emerald-400 font-semibold hover:underline flex items-center gap-1 transition cursor-pointer"
+            >
+              ⚙️ Settings & Preferences
+            </button>
+            <span className="text-zinc-300 dark:text-zinc-700">•</span>
+            <button
+              onClick={() => handleTabChange('account')}
+              className="text-amber-600 dark:text-amber-400 font-semibold hover:underline flex items-center gap-1 transition cursor-pointer"
             >
               ☕ Buy Us a Coffee
-            </a>
-            <span>•</span>
-            <button
-              onClick={() => setIsTokenModalOpen(true)}
-              className="hover:text-zinc-900 dark:hover:text-zinc-100 transition touch-manipulation cursor-pointer"
-            >
-              Token Rules
             </button>
-            <span>•</span>
-            <span className="text-emerald-500">Auto-Purge Active</span>
+            <span className="text-zinc-300 dark:text-zinc-700">•</span>
+            <button
+              onClick={() => handleTabChange('account')}
+              className="hover:text-zinc-900 dark:hover:text-zinc-100 transition cursor-pointer"
+            >
+              FAQ & Privacy
+            </button>
           </div>
         </div>
       </footer>

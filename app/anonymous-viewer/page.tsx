@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
+import Navbar from '@/components/Navbar'
 import {
   Eye,
   Search,
@@ -233,7 +234,7 @@ function getAutoUrlInfo(rawInput: string, defaultPlatform: 'instagram' | 'tiktok
 }
 
 export default function AnonymousViewerPage() {
-  const [theme, setTheme] = useState<'light' | 'dark' | 'system'>('light')
+  const [theme, setTheme] = useState<'light' | 'dark' | 'system'>('dark')
   const [activePlatform, setActivePlatform] = useState<'instagram' | 'tiktok' | 'snapchat' | 'facebook'>('instagram')
   const [query, setQuery] = useState('')
   const [isSearching, setIsSearching] = useState(false)
@@ -260,10 +261,9 @@ export default function AnonymousViewerPage() {
     currentIndex?: number
   } | null>(null)
 
-  // Initial load: preload default brand example so user immediately sees FastDL layout!
+  // Initial load: check theme
   useEffect(() => {
-    // Check theme
-    const saved = localStorage.getItem('theme') as 'light' | 'dark' | 'system' | null
+    const saved = localStorage.getItem('unidownloader_theme') as 'light' | 'dark' | 'system' | null
     if (saved) setTheme(saved)
   }, [])
 
@@ -271,14 +271,21 @@ export default function AnonymousViewerPage() {
     const root = document.documentElement
     if (theme === 'dark') {
       root.classList.add('dark')
+      root.classList.remove('light')
     } else if (theme === 'light') {
       root.classList.remove('dark')
+      root.classList.add('light')
     } else {
       const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
-      if (prefersDark) root.classList.add('dark')
-      else root.classList.remove('dark')
+      if (prefersDark) {
+        root.classList.add('dark')
+        root.classList.remove('light')
+      } else {
+        root.classList.remove('dark')
+        root.classList.add('light')
+      }
     }
-    localStorage.setItem('theme', theme)
+    localStorage.setItem('unidownloader_theme', theme)
   }, [theme])
 
   const handlePaste = async () => {
@@ -522,76 +529,13 @@ export default function AnonymousViewerPage() {
   const currentPlatformInfo = PLATFORMS.find((p) => p.id === activePlatform) || PLATFORMS[0]
 
   return (
-    <div className="min-h-screen bg-[#fafbfc] dark:bg-[#0b0f14] text-zinc-900 dark:text-zinc-100 transition-colors flex flex-col font-sans selection:bg-blue-500 selection:text-white">
-      {/* Top Header */}
-      <header className="sticky top-0 z-50 border-b border-zinc-200 dark:border-zinc-800 bg-white/95 dark:bg-[#0b0f14]/95 backdrop-blur-md">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Link
-              href="/"
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-zinc-600 dark:text-zinc-400 hover:text-zinc-950 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-zinc-800/60 transition"
-            >
-              <ArrowLeft className="w-4 h-4" />
-              <span>Downloader</span>
-            </Link>
-            <div className="h-4 w-px bg-zinc-200 dark:bg-zinc-800 hidden sm:block" />
-            <Link href="/anonymous-viewer" className="flex items-center gap-2.5 font-bold text-base tracking-tight">
-              {/* Official A2Z Logo */}
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src="/logo.png"
-                alt="A2Z Downloader"
-                className="w-8 h-8 rounded-lg object-contain bg-zinc-950 p-0.5 border border-emerald-500/30 shadow-sm"
-              />
-              <span className="font-extrabold text-zinc-900 dark:text-white">
-                A2Z <span className="text-blue-600 dark:text-cyan-400">Anonymous Viewer</span>
-              </span>
-            </Link>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <Link
-              href="/mp3"
-              className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 transition"
-            >
-              <span>MP3 Fast</span>
-            </Link>
-
-            <a
-              href="#donate"
-              className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/30 transition"
-            >
-              <Coffee className="w-3.5 h-3.5 text-amber-500" />
-              <span className="hidden sm:inline">Support</span>
-            </a>
-
-            {/* Theme Toggle */}
-            <div className="flex items-center bg-zinc-100 dark:bg-zinc-800 p-1 rounded-lg border border-zinc-200 dark:border-zinc-700/60">
-              <button
-                onClick={() => setTheme('light')}
-                className={`p-1.5 rounded-md transition ${theme === 'light' ? 'bg-white shadow text-amber-500' : 'text-zinc-400 hover:text-zinc-700'}`}
-                title="Light Mode"
-              >
-                <Sun className="w-3.5 h-3.5" />
-              </button>
-              <button
-                onClick={() => setTheme('dark')}
-                className={`p-1.5 rounded-md transition ${theme === 'dark' ? 'bg-zinc-900 shadow text-blue-400' : 'text-zinc-400 hover:text-zinc-200'}`}
-                title="Dark Mode"
-              >
-                <Moon className="w-3.5 h-3.5" />
-              </button>
-              <button
-                onClick={() => setTheme('system')}
-                className={`p-1.5 rounded-md transition ${theme === 'system' ? 'bg-white dark:bg-zinc-900 shadow text-cyan-400' : 'text-zinc-400 hover:text-zinc-200'}`}
-                title="System Default"
-              >
-                <Monitor className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          </div>
-        </div>
-      </header>
+    <div className="min-h-screen bg-zinc-50 dark:bg-[#090b0e] text-zinc-900 dark:text-zinc-100 transition-colors flex flex-col font-sans selection:bg-cyan-500 selection:text-white bg-ambient">
+      {/* Precision Top Navbar: Consistent Across All Tools */}
+      <Navbar
+        theme={theme}
+        onThemeChange={(newTheme) => setTheme(newTheme)}
+        activeTab="viewer"
+      />
 
       {/* Main Content */}
       <main className="flex-1 max-w-5xl mx-auto px-4 sm:px-6 py-6 sm:py-10 w-full">

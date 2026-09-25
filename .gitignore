@@ -41,3 +41,10 @@ yarn-error.log*
 next-env.d.ts
 
 .vercel
+
+# android & ide
+.idea/
+*.iml
+android/**/build/
+android/**/.gradle/
+android/local.properties

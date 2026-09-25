@@ -68,6 +68,8 @@ export interface EnhancementSettings {
   audioBitrate?: '128k' | '192k' | '320k'
   normalizeAudio?: boolean
   muteAudio?: boolean
+  aspectRatio?: 'original' | '16:9' | '9:16' | '1:1'
+  targetQuality?: string
 }
 
 export interface EnhancedResult {
@@ -92,7 +94,8 @@ export async function processMediaEnhancement(
   inputUrl: string,
   mediaType: 'video' | 'audio' | 'image',
   settings: EnhancementSettings,
-  baseTitle: string
+  baseTitle: string,
+  secondaryAudioUrl?: string
 ): Promise<EnhancedResult> {
   ensureFfmpeg()
 
@@ -104,11 +107,11 @@ export async function processMediaEnhancement(
   const ext = rawExt.replace(/^\./, '')
   const safeTitle = (baseTitle || 'media').slice(0, 35).replace(/[^\w\s.-]/gi, '_')
 
-  // Enforce 60-second limit for trimmed clips / ringtones
+  // Support up to 5-minute (300 seconds) clips / ringtones
   const trimStart = typeof settings.trimStart === 'number' ? Math.max(0, settings.trimStart) : 0
   let trimDuration = 60
   if (settings.trimEnabled && typeof settings.trimEnd === 'number' && settings.trimEnd > trimStart) {
-    trimDuration = Math.min(60, Math.max(1, settings.trimEnd - trimStart))
+    trimDuration = Math.min(300, Math.max(1, settings.trimEnd - trimStart))
   }
 
   const clipSuffix = settings.trimEnabled
@@ -140,26 +143,46 @@ export async function processMediaEnhancement(
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
 
   return new Promise<EnhancedResult>(async (resolve, reject) => {
-    // 25-second execution safety guard
+    // Dynamic execution safety guard: 90s for clips, 10 minutes for full videos
+    const maxTimeout = settings.trimEnabled ? 90000 : 600000
     const timeoutTimer = setTimeout(() => {
       try {
         cleanup()
       } catch {}
-      reject(new Error('Clip extraction timed out. Please try a shorter duration.'))
-    }, 25000)
+      reject(new Error(settings.trimEnabled ? 'Clip extraction timed out. Please try a shorter duration.' : 'Media processing timed out.'))
+    }, maxTimeout)
 
     try {
       const cmd = ffmpeg()
 
       // When trimming is enabled, use fast input-seeking directly over HTTP
-      // This avoids pre-downloading large 100MB+ source files to disk!
       if (settings.trimEnabled && inputUrl.startsWith('http')) {
+        let referer = 'https://www.google.com/'
+        try {
+          const u = new URL(inputUrl)
+          if (u.hostname.includes('savetube')) referer = 'https://yt.savetube.me/'
+          else if (u.hostname.includes('tikwm')) referer = 'https://www.tikwm.com/'
+          else if (u.hostname.includes('instagram') || u.hostname.includes('fbcdn')) referer = 'https://www.instagram.com/'
+        } catch {}
+
         cmd.input(inputUrl)
         cmd.inputOptions([
           '-user_agent', userAgent,
-          '-referer', 'https://www.google.com/',
+          '-referer', referer,
           '-ss', trimStart.toString(),
         ])
+
+        // If secondary separate audio stream is provided (e.g. YouTube 4K/1080p DASH), ingest it as second input
+        const hasSeparateAudio = Boolean(secondaryAudioUrl && secondaryAudioUrl !== inputUrl && !isAudioMode)
+        if (hasSeparateAudio && secondaryAudioUrl) {
+          cmd.input(secondaryAudioUrl)
+          cmd.inputOptions([
+            '-user_agent', userAgent,
+            '-referer', referer,
+            '-ss', trimStart.toString(),
+          ])
+        }
+
         cmd.duration(trimDuration)
 
         if (isAudioMode) {
@@ -173,49 +196,94 @@ export async function processMediaEnhancement(
             cmd.audioFilters('loudnorm=I=-16:TP=-1.5:LRA=11')
           }
         } else {
-          // Video clipping: Use fast stream copy (-c copy) when container matches, or fast ultrafast encode
-          if (ext === 'mp4' || ext === 'mkv') {
+          // Video clipping: aspect ratio conversion or clean keyframe rendering
+          const ratio = settings.aspectRatio
+          const mapOpts = hasSeparateAudio ? ['-map', '0:v:0', '-map', '1:a:0?'] : []
+          const is4KTier = inputUrl.includes('2160') || inputUrl.includes('1440') || (settings as any).targetQuality?.includes('4K') || (settings as any).targetQuality?.includes('2160')
+          const scaleW = is4KTier ? 2160 : 1080
+          const scaleH = is4KTier ? 3840 : 1920
+
+          // Universal smooth playback flags: yuv420p for GPU hardware acceleration, CFR 30fps to stop stutter, faststart for instant buffering
+          const smoothVideoFlags = [
+            '-c:v', 'libx264',
+            '-preset', 'veryfast',
+            '-pix_fmt', 'yuv420p',
+            '-r', '30',
+            '-fps_mode', 'cfr',
+            '-g', '60',
+            '-crf', is4KTier ? '16' : '19',
+            '-c:a', 'aac',
+            '-b:a', '256k',
+            '-movflags', '+faststart',
+            '-avoid_negative_ts', 'make_zero',
+            '-fflags', '+genpts',
+          ]
+
+          if (ratio === '9:16') {
+            // TikTok / Reels 9:16 vertical pad (1080x1920 or 2160x3840 for 4K)
             cmd.outputOptions([
-              '-c', 'copy',
-              '-avoid_negative_ts', 'make_zero',
+              ...mapOpts,
+              '-vf', `scale=${scaleW}:${scaleH}:force_original_aspect_ratio=decrease,pad=${scaleW}:${scaleH}:(ow-iw)/2:(oh-ih)/2:black`,
+              ...smoothVideoFlags,
+            ])
+          } else if (ratio === '1:1') {
+            // Square 1:1 pad (1080x1080 or 2160x2160 for 4K)
+            const sqDim = is4KTier ? 2160 : 1080
+            cmd.outputOptions([
+              ...mapOpts,
+              '-vf', `scale=${sqDim}:${sqDim}:force_original_aspect_ratio=decrease,pad=${sqDim}:${sqDim}:(ow-iw)/2:(oh-ih)/2:black`,
+              ...smoothVideoFlags,
+            ])
+          } else if (ratio === '16:9') {
+            // Landscape 16:9 pad (1920x1080 or 3840x2160 for 4K)
+            const landW = is4KTier ? 3840 : 1920
+            const landH = is4KTier ? 2160 : 1080
+            cmd.outputOptions([
+              ...mapOpts,
+              '-vf', `scale=${landW}:${landH}:force_original_aspect_ratio=decrease,pad=${landW}:${landH}:(ow-iw)/2:(oh-ih)/2:black`,
+              ...smoothVideoFlags,
             ])
           } else if (ext === 'gif') {
             cmd.outputOptions([
               '-vf',
-              'fps=10,scale=400:-1:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse',
+              'fps=15,scale=480:-1:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse',
             ])
           } else {
-            cmd.outputOptions(['-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '24'])
+            // Re-encode trimmed clip with smooth keyframe pacing to prevent non-keyframe freeze and lag
+            cmd.outputOptions([
+              ...mapOpts,
+              ...smoothVideoFlags,
+            ])
           }
         }
       } else {
-        // Standard full file processing: pre-fetch stream with timeout
+        let referer = 'https://www.google.com/'
         try {
-          const streamRes = await fetch(inputUrl, {
-            headers: {
-              'User-Agent': userAgent,
-              'Accept': '*/*',
-              'Referer': 'https://www.google.com/',
-            },
-            signal: AbortSignal.timeout(20000),
-          })
+          const u = new URL(inputUrl)
+          if (u.hostname.includes('savetube')) referer = 'https://yt.savetube.me/'
+          else if (u.hostname.includes('tikwm')) referer = 'https://www.tikwm.com/'
+          else if (u.hostname.includes('instagram') || u.hostname.includes('fbcdn')) referer = 'https://www.instagram.com/'
+        } catch {}
 
-          if (!streamRes.ok || !streamRes.body) {
-            throw new Error(`Failed to fetch media stream (${streamRes.status})`)
-          }
-
-          const fileStream = fs.createWriteStream(tempInputPath)
-          // @ts-ignore
-          await pipeline(streamRes.body, fileStream)
-        } catch (fetchErr: any) {
-          cleanup()
-          clearTimeout(timeoutTimer)
-          return reject(new Error(`Source stream fetch failed: ${fetchErr?.message || fetchErr}`))
+        cmd.input(inputUrl)
+        if (inputUrl.startsWith('http')) {
+          cmd.inputOptions([
+            '-user_agent', userAgent,
+            '-referer', referer,
+          ])
         }
 
-        cmd.input(tempInputPath)
-
-        if (isAudioMode) {
+        const hasSeparateAudio = Boolean(secondaryAudioUrl && secondaryAudioUrl !== inputUrl && !isAudioMode)
+        if (hasSeparateAudio && secondaryAudioUrl) {
+          cmd.input(secondaryAudioUrl)
+          if (secondaryAudioUrl.startsWith('http')) {
+            cmd.inputOptions([
+              '-user_agent', userAgent,
+              '-referer', referer,
+            ])
+          }
+          cmd.outputOptions(['-map', '0:v:0', '-map', '1:a:0?', '-c:v', 'copy', '-c:a', 'aac', '-b:a', '256k', '-movflags', '+faststart', '-avoid_negative_ts', 'make_zero'])
+        } else if (isAudioMode) {
           cmd.noVideo()
           if (ext === 'wav') {
             cmd.audioCodec('pcm_s16le')
@@ -223,7 +291,7 @@ export async function processMediaEnhancement(
             cmd.audioCodec('libmp3lame').audioBitrate(settings.audioBitrate || '192k')
           }
         } else {
-          cmd.outputOptions(['-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '24'])
+          cmd.outputOptions(['-c', 'copy', '-movflags', '+faststart', '-avoid_negative_ts', 'make_zero'])
         }
       }
 

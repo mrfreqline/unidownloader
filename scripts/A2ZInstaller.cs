@@ -160,21 +160,15 @@ namespace A2ZDownloader
                 progressBar.Value = 70;
                 lblStatus.Text = "Configuring shortcuts and system integration...";
 
-                // 1. Desktop Shortcut
+                // 1. Desktop Shortcut (.lnk)
                 if (chkDesktop.Checked)
                 {
                     string desktop = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
-                    string shortcutPath = Path.Combine(desktop, "A2Z Downloader.url");
-                    using (StreamWriter w = new StreamWriter(shortcutPath))
-                    {
-                        w.WriteLine("[InternetShortcut]");
-                        w.WriteLine("URL=https://a2zdownloader.vercel.app");
-                        w.WriteLine("IconIndex=0");
-                        w.WriteLine("IconFile=https://a2zdownloader.vercel.app/favicon.ico");
-                    }
+                    string shortcutPath = Path.Combine(desktop, "A2Z Downloader.lnk");
+                    CreateAppShortcut(shortcutPath, appExePath, installDir, "A2Z Downloader - Universal Media Downloader");
                 }
 
-                // 2. Start Menu Shortcut
+                // 2. Start Menu Shortcut (.lnk)
                 if (chkStartMenu.Checked)
                 {
                     string startMenu = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.StartMenu), "Programs", "A2Z Downloader");
@@ -182,20 +176,11 @@ namespace A2ZDownloader
                     {
                         Directory.CreateDirectory(startMenu);
                     }
-                    string appShortcut = Path.Combine(startMenu, "A2Z Downloader.url");
-                    using (StreamWriter w = new StreamWriter(appShortcut))
-                    {
-                        w.WriteLine("[InternetShortcut]");
-                        w.WriteLine("URL=https://a2zdownloader.vercel.app");
-                        w.WriteLine("IconIndex=0");
-                        w.WriteLine("IconFile=https://a2zdownloader.vercel.app/favicon.ico");
-                    }
-                    string uninstallerShortcut = Path.Combine(startMenu, "Uninstall A2Z Downloader.url");
-                    using (StreamWriter w = new StreamWriter(uninstallerShortcut))
-                    {
-                        w.WriteLine("[InternetShortcut]");
-                        w.WriteLine("URL=file:///" + uninstallerPath.Replace('\\', '/'));
-                    }
+                    string appShortcut = Path.Combine(startMenu, "A2Z Downloader.lnk");
+                    CreateAppShortcut(appShortcut, appExePath, installDir, "A2Z Downloader - Universal Media Downloader");
+
+                    string uninstallerShortcut = Path.Combine(startMenu, "Uninstall A2Z Downloader.lnk");
+                    CreateAppShortcut(uninstallerShortcut, uninstallerPath, installDir, "Uninstall A2Z Downloader");
                 }
 
                 progressBar.Value = 90;
@@ -247,6 +232,26 @@ namespace A2ZDownloader
                 MessageBox.Show("Setup error: " + ex.Message, "Setup Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 this.Close();
             }
+        }
+
+        private void CreateAppShortcut(string shortcutPath, string targetPath, string workingDir, string description)
+        {
+            try
+            {
+                Type shellType = Type.GetTypeFromProgID("WScript.Shell");
+                if (shellType != null)
+                {
+                    object shell = Activator.CreateInstance(shellType);
+                    object shortcut = shellType.InvokeMember("CreateShortcut", BindingFlags.InvokeMethod, null, shell, new object[] { shortcutPath });
+                    Type scType = shortcut.GetType();
+                    scType.InvokeMember("TargetPath", BindingFlags.SetProperty, null, shortcut, new object[] { targetPath });
+                    scType.InvokeMember("WorkingDirectory", BindingFlags.SetProperty, null, shortcut, new object[] { workingDir });
+                    scType.InvokeMember("Description", BindingFlags.SetProperty, null, shortcut, new object[] { description });
+                    scType.InvokeMember("IconLocation", BindingFlags.SetProperty, null, shortcut, new object[] { targetPath + ",0" });
+                    scType.InvokeMember("Save", BindingFlags.InvokeMethod, null, shortcut, null);
+                }
+            }
+            catch {}
         }
 
         private void ExtractResource(string resourceName, string targetPath)

@@ -23,14 +23,58 @@ function createWindow() {
   // Remove default menu for sleek app look
   Menu.setApplicationMenu(null)
 
-  // In production or when hosted, load the app URL or local server
-  const startUrl = process.env.ELECTRON_START_URL || 'https://a2zdownloader.vercel.app'
-  mainWindow.loadURL(startUrl)
+  // Smart startup URL: automatically detect local dev server on localhost:3000 if running, else load cloud URL
+  const http = require('http')
+  const probeLocalhost = new Promise(resolve => {
+    if (process.env.ELECTRON_START_URL) {
+      return resolve(process.env.ELECTRON_START_URL)
+    }
+    const req = http.get('http://127.0.0.1:3000', res => {
+      resolve('http://localhost:3000')
+    })
+    req.on('error', () => {
+      resolve('https://a2zdownloader.vercel.app')
+    })
+    req.setTimeout(800, () => {
+      req.destroy()
+      resolve('https://a2zdownloader.vercel.app')
+    })
+  })
+
+  probeLocalhost.then(startUrl => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      console.log(`[A2Z Desktop] Loading interface from: ${startUrl}`)
+      mainWindow.loadURL(startUrl)
+    }
+  })
 
   // Open external links (like ads, source links) in default browser
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url)
     return { action: 'deny' }
+  })
+
+  // Native Windows Download Manager: downloads directly to user's Downloads folder
+  mainWindow.webContents.session.on('will-download', (event, item) => {
+    const defaultPath = path.join(app.getPath('downloads'), item.getFilename())
+    item.setSavePath(defaultPath)
+
+    item.on('updated', (event, state) => {
+      if (state === 'progressing' && item.getTotalBytes() > 0) {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.setProgressBar(item.getReceivedBytes() / item.getTotalBytes())
+        }
+      }
+    })
+
+    item.once('done', (event, state) => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.setProgressBar(-1) // Reset taskbar progress
+      }
+      if (state === 'completed') {
+        shell.showItemInFolder(item.getSavePath())
+      }
+    })
   })
 
   mainWindow.on('closed', () => {

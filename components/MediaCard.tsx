@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import Link from 'next/link'
 import {
   Download,
   Film,
@@ -18,9 +19,15 @@ import {
   QrCode,
   Smartphone,
   Scissors,
+  Sparkles,
+  AlertTriangle,
+  Monitor,
+  Coffee,
 } from 'lucide-react'
+
 import MediaEnhancer, { EnhancementSettings } from './MediaEnhancer'
 import QrModal from './QrModal'
+import { extractYouTubeVideoId } from '@/lib/downloader/client-utils'
 
 export interface AnalyzedMedia {
   title: string
@@ -56,6 +63,7 @@ interface MediaCardProps {
   isDownloading: boolean
   onRequireAuth: (reason: '4k' | 'limit') => void
   onRequireTokens: () => void
+  onOpenEnhance?: () => void
 }
 
 export default function MediaCard({
@@ -67,6 +75,7 @@ export default function MediaCard({
   isDownloading,
   onRequireAuth,
   onRequireTokens,
+  onOpenEnhance,
 }: MediaCardProps) {
   const defaultTab = media.isDirectMovie ? 'watch' : media.fileType || 'video'
   const [activeTab, setActiveTab] = useState<'video' | 'audio' | 'image' | 'watch'>(defaultTab)
@@ -104,11 +113,25 @@ export default function MediaCard({
     return 2
   }
 
+  const [showRedNotice, setShowRedNotice] = useState(false)
+
+  const isHeavyDownload =
+    activeTab === 'video' &&
+    (selectedQuality.includes('4K') ||
+      selectedQuality.includes('2K') ||
+      selectedQuality.includes('1440p') ||
+      selectedQuality.includes('2160p') ||
+      (!enhancement.trimEnabled && (media.durationSeconds || 0) > 300))
+
   const tokenCost = getTokenCost()
   const isFreeTrialApplicable = true
   const canAfford = true
 
   const handleDownloadClick = () => {
+    if (isHeavyDownload) {
+      setShowRedNotice(true)
+    }
+
     const downloadType =
       activeTab === 'audio' ? 'audio' : activeTab === 'image' || media.fileType === 'image' ? 'image' : 'video'
 
@@ -145,7 +168,40 @@ export default function MediaCard({
     )
   }
 
-  const hasPlayableStream = Boolean(media.streamUrl || media.downloadUrl)
+  const handleDownload60sClip = () => {
+    const clipStart = enhancement.trimEnabled ? enhancement.trimStart : 0
+    const clipEnd = enhancement.trimEnabled
+      ? enhancement.trimEnd
+      : Math.min(media.durationSeconds || 60, 60)
+    let targetUrl = media.downloadUrl
+    if (media.formats && media.formats.length > 0) {
+      const cleanQ = selectedQuality.replace(/[^\d]/g, '')
+      const match = media.formats.find(
+        f =>
+          f.type !== 'audio' &&
+          (f.label === selectedQuality || (f.quality && cleanQ && String(f.quality) === cleanQ))
+      )
+      if (match?.url) targetUrl = match.url
+    }
+
+    onDownload(
+      selectedQuality,
+      'video',
+      {
+        ...enhancement,
+        enabled: true,
+        trimEnabled: true,
+        trimStart: clipStart,
+        trimEnd: clipEnd,
+        targetFormat: 'mp4',
+      },
+      targetUrl
+    )
+  }
+
+  const ytVideoId = extractYouTubeVideoId(media.originalUrl || media.streamUrl || '')
+  const hasPlayableStream = Boolean(ytVideoId || media.streamUrl || media.downloadUrl)
+
 
   return (
     <div className="w-full rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-3.5 sm:p-5 shadow-lg space-y-4 sm:space-y-5 animate-in fade-in-50 duration-200">
@@ -236,23 +292,27 @@ export default function MediaCard({
               <button
                 type="button"
                 onClick={() => {
-                  setEnhancement(prev => ({
-                    ...prev,
-                    enabled: true,
-                    trimEnabled: true,
-                    trimStart: 0,
-                    trimEnd: Math.min(media.durationSeconds || 60, 60),
-                  }))
+                  if (onOpenEnhance) {
+                    onOpenEnhance()
+                  } else {
+                    setEnhancement(prev => ({
+                      ...prev,
+                      enabled: true,
+                      trimEnabled: true,
+                      trimStart: 0,
+                      trimEnd: Math.min(media.durationSeconds || 60, 60),
+                    }))
+                  }
                 }}
                 className={`px-2.5 py-0.5 rounded-full text-[10px] font-mono flex items-center gap-1 transition cursor-pointer border ${
                   enhancement.trimEnabled
-                    ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
-                    : 'bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-blue-400 border-blue-500/30'
+                    ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs'
+                    : 'bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border-emerald-500/30'
                 }`}
-                title="Trim a short clip or audio ringtone (up to 60 seconds)"
+                title="Trim a short clip or audio ringtone (Media Clip)"
               >
                 <Scissors className="w-3 h-3" />
-                <span>{enhancement.trimEnabled ? '✂️ Trimming Active (Max 60s)' : '✂️ Trim Clip / Ringtone (60s)'}</span>
+                <span>✂️ Media Clip</span>
               </button>
             )}
           </div>
@@ -344,24 +404,50 @@ export default function MediaCard({
             </span>
           </button>
         )}
+
+        {onOpenEnhance && (
+          <button
+            type="button"
+            onClick={onOpenEnhance}
+            className="flex-1 py-2 px-1 rounded-lg flex items-center justify-center gap-1 sm:gap-2 transition touch-manipulation cursor-pointer text-zinc-500 hover:text-cyan-500 hover:bg-cyan-500/10 font-medium"
+            title="Clip & Enhance Video"
+          >
+            <Scissors className="w-3.5 h-3.5 shrink-0 text-cyan-400" />
+            <span className="sm:hidden">Clip</span>
+            <span className="hidden sm:inline">Enhance</span>
+          </button>
+        )}
       </div>
 
-      {/* Embedded HTML5 Video Player (Watch Mode for Movies or Clips) */}
-      {activeTab === 'watch' && hasPlayableStream && (
+      {/* High-Definition In-Browser Streaming Player (Zero Buffering Edge Player) */}
+      {activeTab === 'watch' && (
         <div className="space-y-3 animate-in fade-in-50 duration-200">
           <div className="relative aspect-video w-full rounded-xl overflow-hidden bg-black border border-zinc-200 dark:border-zinc-800 shadow-inner">
-            <video
-              src={media.streamUrl || media.downloadUrl}
-              controls
-              playsInline
-              className="w-full h-full object-contain"
-              poster={media.thumbnail}
-            >
-              Your browser does not support HTML5 video playback.
-            </video>
+            {ytVideoId ? (
+              <iframe
+                src={`https://www.youtube-nocookie.com/embed/${ytVideoId}?autoplay=1&rel=0&modestbranding=1`}
+                title={media.title}
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                allowFullScreen
+                className="w-full h-full border-0"
+              />
+            ) : (
+              <video
+                src={media.streamUrl || media.downloadUrl}
+                controls
+                playsInline
+                className="w-full h-full object-contain"
+                poster={media.thumbnail}
+              >
+                Your browser does not support HTML5 video playback.
+              </video>
+            )}
           </div>
           <div className="flex items-center justify-between text-xs text-zinc-500 font-mono px-1">
-            <span>Direct In-Browser Playback</span>
+            <span className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400 font-semibold">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              {ytVideoId ? 'Fast CDN Edge Stream (Zero Buffering • Full Stereo Sound)' : 'Direct Video Stream'}
+            </span>
             {media.fileSize && <span>File Size: {media.fileSize}</span>}
           </div>
         </div>
@@ -566,8 +652,135 @@ export default function MediaCard({
           )}
         </button>
 
+        {/* Friendly High-Quality Guidance Card for 4K / 2K & Large Files */}
+        <div className="space-y-2 pt-1">
+          <button
+            type="button"
+            onClick={() => setShowRedNotice(!showRedNotice)}
+            className={`w-full py-2 px-3 rounded-xl text-xs font-semibold flex items-center justify-between border transition cursor-pointer ${
+              isHeavyDownload
+                ? 'border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400'
+                : 'border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800'
+            }`}
+          >
+            <span className="flex items-center gap-1.5 font-bold">
+              <Sparkles className="w-4 h-4 text-amber-500 shrink-0" />
+              <span>
+                {isHeavyDownload
+                  ? '💡 4K / 2K Ultra HD High Quality Notice'
+                  : '💡 Original High Quality (4K / 2K) Notice'}
+              </span>
+            </span>
+            <span className="text-[11px] underline">
+              {showRedNotice || isHeavyDownload ? 'Hide' : 'Want Original 4K/2K?'}
+            </span>
+          </button>
+
+          {(showRedNotice || isHeavyDownload) && (
+            <div className="p-3.5 sm:p-4 rounded-xl border border-amber-500/30 bg-gradient-to-br from-amber-500/5 via-emerald-500/5 to-teal-500/5 dark:from-zinc-900/90 dark:to-zinc-950 space-y-3 animate-in fade-in-50 duration-200">
+              <div className="flex items-start gap-2.5">
+                <Sparkles className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
+                <div className="space-y-1">
+                  <h4 className="text-xs sm:text-sm font-bold text-zinc-900 dark:text-zinc-100">
+                    High Quality & Cloud Storage Information
+                  </h4>
+                  <p className="text-xs text-zinc-600 dark:text-zinc-400 leading-relaxed">
+                    Free cloud web hosting has limited storage and bandwidth for rendering huge 4K/2K video files in the cloud. The web downloader will deliver the highest possible quality available for this video.
+                  </p>
+                  <p className="text-xs text-zinc-700 dark:text-zinc-300 leading-relaxed font-medium">
+                    To download in <strong className="text-emerald-600 dark:text-emerald-400">Original 4K / 2K Ultra HD with zero limits</strong>, download our free Windows PC (.EXE) or Android Phone (.APK) app! The app processes videos directly on your device using your PC's storage. Or if you can support us, buy us a coffee to help us buy bigger cloud storage!
+                  </p>
+                </div>
+              </div>
+
+              {/* Direct App Action Buttons */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1">
+                <a
+                  href="/apps/A2Z-Downloader-Setup.exe"
+                  download="A2Z-Downloader-Setup.exe"
+                  className="py-2.5 px-3 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-sm transition"
+                >
+                  <Monitor className="w-3.5 h-3.5" />
+                  <span>Download PC (.EXE)</span>
+                </a>
+                <a
+                  href="/apps/A2Z-Downloader.apk"
+                  download="A2Z-Downloader.apk"
+                  className="py-2.5 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-sm transition"
+                >
+                  <Smartphone className="w-3.5 h-3.5" />
+                  <span>Download Phone (.APK)</span>
+                </a>
+                <a
+                  href="https://wa.me/9779716280428?text=Hi%20A2Z%20Downloader!%20I%20want%20to%20buy%20you%20a%20coffee%20to%20support%20better%20servers"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="py-2.5 px-3 rounded-lg bg-amber-500 hover:bg-amber-400 text-zinc-950 text-xs font-bold flex items-center justify-center gap-1.5 shadow-sm transition"
+                >
+                  <Coffee className="w-3.5 h-3.5" />
+                  <span>☕ Buy Us a Coffee</span>
+                </a>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Dual Clip & Edit Action Buttons (User Request: 60s MP4 Download OR Render & Edit directly from first page) */}
+        {(activeTab === 'video' || activeTab === 'watch') && (
+          <div className="space-y-2 pt-2 border-t border-zinc-100 dark:border-zinc-850">
+            <div className="flex items-center justify-between text-xs">
+              <span className="font-semibold text-zinc-800 dark:text-zinc-200 flex items-center gap-1.5 font-mono">
+                <Scissors className="w-3.5 h-3.5 text-emerald-500" />
+                <span>
+                  {enhancement.trimEnabled
+                    ? `${Math.round(Math.max(1, enhancement.trimEnd - enhancement.trimStart))}s Custom Clip:`
+                    : 'Instant 60s Short-Form Clip:'}
+                </span>
+              </span>
+              <span className="text-[10px] font-mono text-emerald-500 font-bold bg-emerald-500/10 px-2 py-0.5 rounded-md border border-emerald-500/20">
+                1080p HD Studio Ready
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              {/* Button 1: Download 60s Clip (MP4) */}
+              <button
+                type="button"
+                onClick={handleDownload60sClip}
+                disabled={isDownloading}
+                className="py-3 px-4 rounded-xl font-bold text-xs sm:text-sm bg-gradient-to-r from-emerald-500 via-teal-400 to-cyan-500 text-zinc-950 hover:brightness-105 active:scale-[0.99] transition shadow-md shadow-emerald-500/20 disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer touch-manipulation"
+              >
+                <Download className="w-4 h-4 stroke-[2.5]" />
+                <span>
+                  Download{' '}
+                  {enhancement.trimEnabled
+                    ? `${Math.round(Math.max(1, enhancement.trimEnd - enhancement.trimStart))}s`
+                    : '60s'}{' '}
+                  Clip (MP4)
+                </span>
+              </button>
+
+              {/* Button 2: Render 60s Clip & Edit (Opens Studio Editor) */}
+              <Link
+                href={`/editor?src=${encodeURIComponent(media.originalUrl || media.streamUrl || media.downloadUrl || '')}&audio=${encodeURIComponent(media.audioUrl || '')}&origUrl=${encodeURIComponent(media.originalUrl || '')}&title=${encodeURIComponent(media.title)}&start=${enhancement.trimEnabled ? enhancement.trimStart : 0}&duration=${enhancement.trimEnabled ? Math.round(Math.max(1, enhancement.trimEnd - enhancement.trimStart)) : Math.min(media.durationSeconds || 60, 60)}&ratio=9:16&quality=${encodeURIComponent(selectedQuality)}`}
+                className="py-3 px-4 rounded-xl font-bold text-xs sm:text-sm bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-950 hover:bg-zinc-800 dark:hover:bg-zinc-200 transition shadow-sm flex items-center justify-center gap-2 text-center cursor-pointer touch-manipulation"
+              >
+                <Sparkles className="w-4 h-4 text-emerald-500" />
+                <span>
+                  ✂️ Render{' '}
+                  {enhancement.trimEnabled
+                    ? `${Math.round(Math.max(1, enhancement.trimEnd - enhancement.trimStart))}s`
+                    : '60s'}{' '}
+                  Clip & Edit
+                </span>
+              </Link>
+            </div>
+          </div>
+        )}
+
         {/* Quota hint */}
         <div className="flex items-center justify-between text-[10px] sm:text-[11px] text-zinc-500 px-1 font-mono">
+
           <span className="text-emerald-600 dark:text-emerald-400 font-medium">
             100% Free • Unlimited Worldwide Access
           </span>

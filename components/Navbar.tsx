@@ -1,241 +1,203 @@
 'use client'
 
+import { useState } from 'react'
 import Link from 'next/link'
-import { Download, Coins, Sun, Moon, Monitor, User, LogOut, Plus, Smartphone, Music, Coffee, HelpCircle, Eye } from 'lucide-react'
+import {
+  Download,
+  Eye,
+  Scissors,
+  Music,
+  Settings,
+  Sun,
+  Moon,
+  Menu,
+  X,
+  Coffee,
+  Sparkles,
+} from 'lucide-react'
+
+export type NavTabType = 'home' | 'viewer' | 'clip' | 'editor' | 'mp3' | 'account'
 
 interface NavbarProps {
-  tokens: number
-  onOpenTokenModal: () => void
-  onOpenAuthModal: () => void
+  tokens?: number
+  onOpenTokenModal?: () => void
+  onOpenAuthModal?: () => void
   onOpenAppModal?: () => void
-  isLoggedIn: boolean
+  isLoggedIn?: boolean
   userEmail?: string
   onLogout?: () => void
   theme: 'light' | 'dark' | 'system'
   onThemeChange: (theme: 'light' | 'dark' | 'system') => void
+  activeTab?: string
+  onSelectTab?: (tab: any) => void
 }
 
 export default function Navbar({
-  tokens,
-  onOpenTokenModal,
-  onOpenAuthModal,
-  onOpenAppModal,
-  isLoggedIn,
-  userEmail,
-  onLogout,
   theme,
   onThemeChange,
+  activeTab = 'home',
+  onSelectTab,
 }: NavbarProps) {
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
+
+  const navTabs = [
+    { id: 'home' as NavTabType, label: 'Downloader', icon: Download, href: '/' },
+    { id: 'clip' as NavTabType, label: 'Media Clip', icon: Scissors, href: '/#clip' },
+    { id: 'editor' as NavTabType, label: 'Studio Editor', icon: Sparkles, href: '/editor' },
+    { id: 'viewer' as NavTabType, label: 'Anonymous Viewer', icon: Eye, href: '/anonymous-viewer' },
+    { id: 'mp3' as NavTabType, label: 'MP3 Fast', icon: Music, href: '/mp3' },
+    { id: 'account' as NavTabType, label: 'Settings', icon: Settings, href: '/#account' },
+  ]
+
+  const handleTabClick = (tab: typeof navTabs[0]) => {
+    setIsMobileMenuOpen(false)
+    if (tab.id === 'editor') {
+      window.location.href = '/editor'
+      return
+    }
+    if (onSelectTab) {
+      onSelectTab(tab.id)
+    } else {
+      window.location.href = tab.href
+    }
+  }
+
   return (
-    <header className="sticky top-0 z-40 border-b border-zinc-200 dark:border-zinc-800/80 bg-white/90 dark:bg-zinc-950/90 backdrop-blur-md">
-      <div className="max-w-6xl mx-auto px-3 sm:px-6 h-14 sm:h-16 flex items-center justify-between gap-2 sm:gap-4">
+    <header className="sticky top-0 z-50 w-full border-b border-zinc-200 dark:border-white/10 bg-white/85 dark:bg-[#090b0e]/85 backdrop-blur-xl transition-colors duration-200">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-3">
         
-        {/* Logo & Brand */}
-        <div className="flex items-center gap-2 sm:gap-6 shrink-0">
-          <Link href="/" className="flex items-center gap-2.5 group">
-            <div className="relative w-8 h-8 sm:w-9 sm:h-9 rounded-xl overflow-hidden bg-black flex items-center justify-center shadow-xs shrink-0 ring-1 ring-zinc-200 dark:ring-zinc-800 group-hover:scale-105 transition">
-              <img
-                src="/logo-icon.jpg"
-                alt="A2Z Downloader"
-                className="w-full h-full object-cover"
-              />
+        {/* Left: Brand Identity */}
+        <div className="flex items-center gap-3">
+          <Link
+            href="/"
+            onClick={(e) => {
+              if (onSelectTab) {
+                e.preventDefault()
+                onSelectTab('home')
+              }
+            }}
+            className="flex items-center gap-2.5 group"
+          >
+            <div className="w-8 h-8 rounded-xl overflow-hidden shadow-md shadow-emerald-500/10 border border-emerald-500/20 bg-black flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform duration-200">
+              <img src="/logo-icon.jpg" alt="A2Z Downloader" className="w-full h-full object-cover" />
             </div>
             <div className="flex flex-col">
-              <span className="font-extrabold text-sm sm:text-base tracking-tight text-zinc-900 dark:text-zinc-100 flex items-center gap-0.5">
+              <span className="text-base font-bold tracking-tight text-zinc-900 dark:text-white flex items-center gap-1">
                 <span className="bg-gradient-to-r from-emerald-400 via-teal-300 to-cyan-400 bg-clip-text text-transparent">
                   A2Z
                 </span>
                 <span>Downloader</span>
               </span>
-              <span className="text-[9px] uppercase font-mono tracking-wider text-zinc-400 dark:text-zinc-500 hidden sm:inline">
-                Simple & Fast
+              <span className="text-[9px] uppercase font-mono tracking-wider text-zinc-400 hidden sm:inline">
+                Universal Media Engine
               </span>
             </div>
           </Link>
-
-          {/* Zero retention tag - hidden on small mobile to save space */}
-          <div className="hidden lg:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-mono bg-zinc-100 dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400 border border-zinc-200 dark:border-zinc-800">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-            Zero Retention Active
-          </div>
-
-          {/* Dedicated Fast MP3 Link */}
-          <Link
-            href="/mp3"
-            className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/25 transition cursor-pointer"
-            title="Dedicated Fast MP3 Downloader"
-          >
-            <Music className="w-3.5 h-3.5 text-emerald-500" />
-            <span>MP3 Fast</span>
-          </Link>
-
-          {/* Anonymous Viewer Link */}
-          <Link
-            href="/anonymous-viewer"
-            className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-violet-500/10 hover:bg-violet-500/20 text-violet-600 dark:text-violet-400 border border-violet-500/25 transition cursor-pointer"
-            title="Anonymous Profile & Story Viewer (Instagram, TikTok, FB, Snapchat)"
-          >
-            <Eye className="w-3.5 h-3.5 text-violet-500" />
-            <span>Anonymous Viewer</span>
-          </Link>
-
-          {/* Support / Buy Us a Coffee Link */}
-          <a
-            href="#donate"
-            className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/25 transition cursor-pointer"
-            title="Buy Us a Coffee (eSewa / Khalti / Bank QR)"
-          >
-            <Coffee className="w-3.5 h-3.5 text-amber-500" />
-            <span>Buy Coffee</span>
-          </a>
-
-          {/* FAQ Link */}
-          <a
-            href="/#faq"
-            className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-zinc-100 dark:bg-zinc-900 hover:bg-zinc-200 dark:hover:bg-zinc-850 text-zinc-700 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-800 transition cursor-pointer"
-            title="Frequently Asked Questions"
-          >
-            <HelpCircle className="w-3.5 h-3.5 text-emerald-500" />
-            <span>FAQ</span>
-          </a>
         </div>
 
-        {/* Right Actions: Compact & Touch-friendly for Mobile */}
-        <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
+        {/* Center: Frosted Glass Desktop Tabs (Hidden on small phones, visible on tablets & laptops) */}
+        <nav className="hidden md:flex items-center gap-1 p-1 rounded-full bg-zinc-100/90 dark:bg-[#12151a] border border-zinc-200 dark:border-white/10 shadow-xs">
+          {navTabs.map((tab) => {
+            const isActive = activeTab === tab.id
+            const Icon = tab.icon
+
+            return (
+              <button
+                key={tab.id}
+                onClick={() => handleTabClick(tab)}
+                className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold transition cursor-pointer select-none whitespace-nowrap ${
+                  isActive
+                    ? 'bg-gradient-to-r from-emerald-400 to-cyan-400 text-zinc-950 font-bold shadow-md shadow-emerald-500/20'
+                    : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-950 dark:hover:text-white hover:bg-zinc-200/50 dark:hover:bg-white/5'
+                }`}
+              >
+                <Icon className={`w-3.5 h-3.5 ${isActive ? 'text-zinc-950' : 'text-zinc-400'}`} />
+                <span>{tab.label}</span>
+              </button>
+            )
+          })}
+        </nav>
+
+        {/* Right: Coffee / Donate Link + Theme Toggle + Mobile Hamburger Button */}
+        <div className="flex items-center gap-2 shrink-0">
           
-          {/* Token Counter & Earn Button */}
-          <button
-            onClick={onOpenTokenModal}
-            className="inline-flex items-center gap-1 sm:gap-2 px-2 sm:px-3 py-1.5 rounded-lg text-xs font-medium bg-zinc-100 dark:bg-zinc-900 hover:bg-zinc-200 dark:hover:bg-zinc-800 border border-zinc-200 dark:border-zinc-800 transition text-zinc-800 dark:text-zinc-200 touch-manipulation cursor-pointer"
-            title="Click to earn tokens"
+          {/* Coffee / Donate Button (Direct link to /donate) */}
+          <Link
+            href="/donate"
+            className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-semibold bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/25 transition cursor-pointer shadow-xs group"
+            title="Buy Us a Coffee / Donate"
           >
-            <Coins className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-            <span className="font-mono font-bold text-xs">{tokens}</span>
-            <span className="text-zinc-400 text-[11px] hidden md:inline">Tokens</span>
-            <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-amber-500/15 text-amber-600 dark:text-amber-400 text-[10px] font-bold shrink-0">
-              <Plus className="w-2.5 h-2.5" />
-            </span>
-          </button>
+            <Coffee className="w-3.5 h-3.5 text-amber-500 group-hover:rotate-12 transition-transform duration-200" />
+            <span className="hidden sm:inline">Coffee</span>
+          </Link>
 
-          {/* Install / Download App Button */}
-          {onOpenAppModal && (
-            <button
-              onClick={onOpenAppModal}
-              className="inline-flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-1.5 rounded-lg text-xs font-medium bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 transition text-emerald-600 dark:text-emerald-400 touch-manipulation cursor-pointer"
-              title="Get Windows .exe or Phone APK"
-            >
-              <Smartphone className="w-3.5 h-3.5 shrink-0" />
-              <span className="hidden xs:inline font-semibold">App</span>
-            </button>
-          )}
-
-          {/* Theme Selector: Compact segmented toggle */}
-          <div className="flex items-center p-0.5 sm:p-1 rounded-lg bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-500">
+          {/* Theme Switcher */}
+          <div className="flex items-center p-0.5 rounded-xl bg-zinc-100 dark:bg-[#171b21] border border-zinc-200 dark:border-white/10 text-zinc-500">
             <button
               onClick={() => onThemeChange('light')}
-              className={`p-1 sm:p-1.5 rounded-md transition touch-manipulation ${
-                theme === 'light'
-                  ? 'bg-white text-zinc-900 shadow-xs'
-                  : 'hover:text-zinc-900 dark:hover:text-zinc-100'
+              className={`p-1.5 rounded-lg transition cursor-pointer ${
+                theme === 'light' ? 'bg-white text-zinc-900 shadow-xs' : 'hover:text-zinc-900 dark:hover:text-zinc-100'
               }`}
               title="Light theme"
-              aria-label="Light theme"
             >
-              <Sun className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
-            </button>
-            <button
-              onClick={() => onThemeChange('system')}
-              className={`p-1 sm:p-1.5 rounded-md transition touch-manipulation hidden xs:inline-block ${
-                theme === 'system'
-                  ? 'bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 shadow-xs'
-                  : 'hover:text-zinc-900 dark:hover:text-zinc-100'
-              }`}
-              title="System theme"
-              aria-label="System theme"
-            >
-              <Monitor className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+              <Sun className="w-3.5 h-3.5" />
             </button>
             <button
               onClick={() => onThemeChange('dark')}
-              className={`p-1 sm:p-1.5 rounded-md transition touch-manipulation ${
-                theme === 'dark'
-                  ? 'bg-zinc-800 text-zinc-100 shadow-xs'
-                  : 'hover:text-zinc-900 dark:hover:text-zinc-100'
+              className={`p-1.5 rounded-lg transition cursor-pointer ${
+                theme === 'dark' ? 'bg-zinc-800 text-zinc-100 shadow-xs' : 'hover:text-zinc-900 dark:hover:text-zinc-100'
               }`}
               title="Dark theme"
-              aria-label="Dark theme"
             >
-              <Moon className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+              <Moon className="w-3.5 h-3.5" />
             </button>
           </div>
 
-          {/* User Account / Auth */}
-          {isLoggedIn ? (
-            <div className="flex items-center gap-1 sm:gap-2">
-              <div className="flex items-center gap-1.5 text-xs text-zinc-700 dark:text-zinc-300 px-2.5 py-1 rounded-lg bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 max-w-[130px] sm:max-w-[200px]">
-                <User className="w-3 h-3 text-emerald-500 shrink-0" />
-                <span className="truncate font-medium">{userEmail || 'Account'}</span>
-              </div>
+          {/* Mobile Hamburger Button (Visible only on phone screens) */}
+          <button
+            onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+            className="md:hidden p-2 rounded-xl bg-zinc-100 dark:bg-[#171b21] border border-zinc-200 dark:border-white/10 text-zinc-700 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-white transition cursor-pointer"
+            aria-label="Toggle Navigation Menu"
+          >
+            {isMobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+          </button>
+
+        </div>
+      </div>
+
+      {/* Mobile Dropdown Menu (Opens smoothly on phone browser) */}
+      {isMobileMenuOpen && (
+        <div className="md:hidden border-t border-zinc-200 dark:border-white/10 bg-white/95 dark:bg-[#090b0e]/95 backdrop-blur-2xl px-4 py-3 space-y-1.5 shadow-2xl animate-in slide-in-from-top-2 duration-150">
+          {navTabs.map((tab) => {
+            const isActive = activeTab === tab.id
+            const Icon = tab.icon
+
+            return (
               <button
-                onClick={onLogout}
-                className="p-1.5 sm:p-2 rounded-lg text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-900 transition touch-manipulation"
-                title="Log out"
+                key={tab.id}
+                onClick={() => handleTabClick(tab)}
+                className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-semibold transition cursor-pointer text-left ${
+                  isActive
+                    ? 'bg-gradient-to-r from-emerald-400 to-cyan-400 text-zinc-950 font-bold shadow-md'
+                    : 'text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-white/5'
+                }`}
               >
-                <LogOut className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                <Icon className={`w-4 h-4 ${isActive ? 'text-zinc-950' : 'text-zinc-400'}`} />
+                <span className="text-sm">{tab.label}</span>
               </button>
-            </div>
-          ) : (
-            <button
-              onClick={onOpenAuthModal}
-              className="inline-flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-medium bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-950 hover:bg-zinc-800 dark:hover:bg-zinc-200 transition shadow-xs touch-manipulation cursor-pointer shrink-0"
-            >
-              <User className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
-              <span className="hidden xs:inline">Sign in</span>
-            </button>
-          )}
-
+            )
+          })}
+          
+          <Link
+            href="/donate"
+            onClick={() => setIsMobileMenuOpen(false)}
+            className="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-semibold transition cursor-pointer text-left bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20"
+          >
+            <Coffee className="w-4 h-4 text-amber-500" />
+            <span className="text-sm font-medium">Buy Us a Coffee / Support Project</span>
+          </Link>
         </div>
-      </div>
-
-      {/* Mobile Quick-Navigation Strip (<sm): Always visible on smartphones */}
-      <div className="sm:hidden border-t border-zinc-200/70 dark:border-zinc-800/80 bg-zinc-50/95 dark:bg-zinc-950/95 backdrop-blur-md px-3 py-1.5 flex items-center justify-between gap-1.5 overflow-x-auto no-scrollbar text-[11px] font-medium">
-        <Link
-          href="/mp3"
-          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/25 transition shrink-0"
-        >
-          <Music className="w-3 h-3 text-emerald-500" />
-          <span>MP3 Fast</span>
-        </Link>
-
-        <Link
-          href="/anonymous-viewer"
-          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-violet-500/10 hover:bg-violet-500/20 text-violet-600 dark:text-violet-400 border border-violet-500/25 transition shrink-0"
-        >
-          <Eye className="w-3 h-3 text-violet-500" />
-          <span>Viewer</span>
-        </Link>
-
-        <a
-          href="#donate"
-          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/25 transition shrink-0"
-        >
-          <Coffee className="w-3 h-3 text-amber-500" />
-          <span>Buy Coffee</span>
-        </a>
-
-        <a
-          href="/#faq"
-          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-zinc-200/70 dark:bg-zinc-900 hover:bg-zinc-300/70 dark:hover:bg-zinc-850 text-zinc-700 dark:text-zinc-300 border border-zinc-300/70 dark:border-zinc-800 transition shrink-0"
-        >
-          <HelpCircle className="w-3 h-3 text-emerald-500" />
-          <span>FAQ</span>
-        </a>
-
-        <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-mono text-zinc-500 dark:text-zinc-400 shrink-0">
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-          <span>Zero Retention</span>
-        </div>
-      </div>
+      )}
     </header>
   )
 }

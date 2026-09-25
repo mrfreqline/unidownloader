@@ -29,6 +29,18 @@ try {
   execSync('npx electron-builder --win --x64 -c.extraMetadata.main=electron-main.js', { stdio: 'inherit' })
   console.log('\n🎉 SUCCESS! Windows Setup file created inside the `dist/` directory!')
   console.log('Look for: dist/A2Z-Downloader-Setup.exe')
+
+  const distExe = path.join(__dirname, '..', 'dist', 'A2Z-Downloader-Setup.exe')
+  const publicAppsDir = path.join(__dirname, '..', 'public', 'apps')
+  const targetExe = path.join(publicAppsDir, 'A2Z-Downloader-Setup.exe')
+
+  if (fs.existsSync(distExe)) {
+    if (!fs.existsSync(publicAppsDir)) {
+      fs.mkdirSync(publicAppsDir, { recursive: true })
+    }
+    fs.copyFileSync(distExe, targetExe)
+    console.log('✅ Successfully copied fresh build to public/apps/A2Z-Downloader-Setup.exe for web downloads!\n')
+  }
 } catch (e) {
   console.log('\n💡 Tip: To build portable/setup EXE anytime on Windows, run:')
   console.log('   npx electron-builder --win -c.extraMetadata.main=electron-main.js\n')

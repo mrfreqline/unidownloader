@@ -116,7 +116,7 @@ export default function MediaEnhancer({
           </div>
           <div>
             <span className="text-xs font-semibold text-zinc-900 dark:text-zinc-100 flex items-center gap-1.5">
-              Media Enhancement
+              Media Clip
               {settings.enabled && (
                 <span className="px-1.5 py-0.2 rounded-sm bg-blue-500/10 text-blue-600 dark:text-blue-400 font-mono text-[9px] font-medium">
                   Active
@@ -124,7 +124,7 @@ export default function MediaEnhancer({
               )}
             </span>
             <span className="text-[10px] sm:text-[11px] text-zinc-500 block">
-              Trim, compress, and convert before transfer (optional)
+              Trim exact portion, compress, and download custom clip
             </span>
           </div>
         </div>
@@ -144,7 +144,7 @@ export default function MediaEnhancer({
           {/* Header Action: Reset */}
           <div className="flex items-center justify-between text-xs pb-2 border-b border-zinc-200 dark:border-zinc-800">
             <span className="font-mono text-zinc-500 text-[10px] sm:text-[11px]">
-              FFMPEG ENGINE
+              MEDIA CLIP STUDIO
             </span>
             <button
               onClick={handleReset}
@@ -265,7 +265,7 @@ export default function MediaEnhancer({
                 value={settings.trimStart}
                 onChange={e => {
                   const newStart = Number(e.target.value)
-                  const currentLen = Math.min(60, Math.max(1, settings.trimEnd - settings.trimStart))
+                  const currentLen = Math.min(300, Math.max(1, settings.trimEnd - settings.trimStart))
                   // Slide the window automatically so the clip length is maintained!
                   const newEnd = Math.min(maxDuration, newStart + currentLen)
                   onChange({
@@ -301,9 +301,9 @@ export default function MediaEnhancer({
               <input
                 type="range"
                 min={1}
-                max={Math.min(60, Math.max(1, maxDuration - settings.trimStart))}
+                max={Math.min(300, Math.max(1, maxDuration - settings.trimStart))}
                 step={1}
-                value={Math.min(60, Math.max(1, settings.trimEnd - settings.trimStart))}
+                value={Math.min(300, Math.max(1, settings.trimEnd - settings.trimStart))}
                 onChange={e => {
                   const newLen = Number(e.target.value)
                   const newEnd = Math.min(maxDuration, settings.trimStart + newLen)
@@ -318,8 +318,8 @@ export default function MediaEnhancer({
               />
               <div className="flex justify-between text-[9px] font-mono text-zinc-400">
                 <span>1s</span>
-                <span>30s (Ringtone)</span>
-                <span>60s (Max)</span>
+                <span>60s (Reel)</span>
+                <span>{formatTime(Math.min(300, maxDuration))} (Max 5m)</span>
               </div>
             </div>
 

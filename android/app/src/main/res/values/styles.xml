@@ -1,0 +1,9 @@
+<resources>
+    <style name="Theme.A2ZDownloader" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="colorPrimary">#10b981</item>
+        <item name="colorPrimaryVariant">#059669</item>
+        <item name="colorOnPrimary">#ffffff</item>
+        <item name="android:statusBarColor">#09090b</item>
+        <item name="android:navigationBarColor">#09090b</item>
+    </style>
+</resources>
