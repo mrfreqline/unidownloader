@@ -78,9 +78,32 @@ export default function Home() {
   const [maintenanceMsg, setMaintenanceMsg] = useState<string | null>(null)
   const [directDownloadLink, setDirectDownloadLink] = useState<{ url: string; filename: string } | null>(null)
   const [latestClipBlobUrl, setLatestClipBlobUrl] = useState<string | null>(null)
-
+  const [nativeProgress, setNativeProgress] = useState<{ id: number; pct: number; text: string } | null>(null)
 
   useEffect(() => {
+    // Listen for live Android native DownloadManager progress events
+    if (typeof window !== 'undefined') {
+      (window as any).onNativeDownloadProgress = (id: number, pct: number, bytes: number, total: number, name: string) => {
+        setIsDownloading(true)
+        const downloadedMB = (bytes / (1024 * 1024)).toFixed(1)
+        const totalMB = total > 0 ? (total / (1024 * 1024)).toFixed(1) + ' MB' : '...'
+        setNativeProgress({
+          id,
+          pct,
+          text: `Downloading ${name}: ${pct}% (${downloadedMB} MB / ${totalMB})`,
+        })
+      }
+      (window as any).onNativeDownloadComplete = (id: number, name: string) => {
+        setIsDownloading(false)
+        setNativeProgress(null)
+        setDownloadSuccessMsg(`✅ ${name} saved to Downloads folder!`)
+      }
+      (window as any).onNativeDownloadFailed = (id: number, name: string, reason: number) => {
+        setIsDownloading(false)
+        setNativeProgress(null)
+        setError(`Download failed (Code: ${reason}). Opening direct link fallback...`)
+      }
+    }
     // Detect mobile in-app webview (Instagram, TikTok, Facebook, etc.)
     if (typeof window !== 'undefined') {
       const ua = navigator.userAgent || navigator.vendor || (window as any).opera || ''
@@ -922,6 +945,25 @@ export default function Home() {
             isActive={isAnalyzing || isDownloading}
             mode={isAnalyzing ? 'analyzing' : 'downloading'}
           />
+        )}
+
+        {/* Live Native Android/Desktop Download Progress Card */}
+        {nativeProgress && (
+          <div className="w-full max-w-2xl mx-auto p-4 rounded-2xl bg-zinc-950 dark:bg-zinc-900 border border-emerald-500/40 shadow-xl space-y-2.5 animate-in fade-in-50 duration-200">
+            <div className="flex items-center justify-between text-xs font-semibold text-white">
+              <span className="flex items-center gap-2 text-emerald-400">
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping" />
+                {nativeProgress.text}
+              </span>
+              <span className="font-mono text-emerald-400 font-bold">{nativeProgress.pct}%</span>
+            </div>
+            <div className="w-full h-3 rounded-full bg-zinc-800 overflow-hidden p-0.5 border border-white/5">
+              <div
+                className="h-full rounded-full bg-gradient-to-r from-emerald-500 via-teal-400 to-cyan-400 transition-all duration-300 shadow-sm"
+                style={{ width: `${Math.max(5, nativeProgress.pct)}%` }}
+              />
+            </div>
+          </div>
         )}
 
         {/* YouTube Maintenance Notification Banner */}

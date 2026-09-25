@@ -16,6 +16,8 @@ import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import java.net.HttpURLConnection
+import java.net.URL
 
 class MainActivity : AppCompatActivity() {
 
@@ -25,9 +27,7 @@ class MainActivity : AppCompatActivity() {
     inner class AndroidBridge {
         @JavascriptInterface
         fun download(url: String, filename: String?, mimeType: String?) {
-            runOnUiThread {
-                downloadFileNative(url, webView.settings.userAgentString, "attachment; filename=\"${filename ?: "download.mp4"}\"", mimeType ?: "video/mp4")
-            }
+            downloadFileNative(url, webView.settings.userAgentString, filename, mimeType ?: "video/mp4")
         }
 
         @JavascriptInterface
@@ -134,36 +134,125 @@ class MainActivity : AppCompatActivity() {
         webView.loadUrl(appUrl)
     }
 
-    private fun downloadFileNative(url: String, userAgent: String, contentDisposition: String, mimeType: String) {
-        try {
-            val fileName = URLUtil.guessFileName(url, contentDisposition, mimeType)
-            val request = DownloadManager.Request(Uri.parse(url)).apply {
-                setMimeType(mimeType)
-                addRequestHeader("User-Agent", userAgent)
-                if (url.contains("savetube") || url.contains("yt.savetube")) {
-                    addRequestHeader("Referer", "https://yt.savetube.me/")
-                } else if (url.contains("tikwm")) {
-                    addRequestHeader("Referer", "https://www.tikwm.com/")
-                } else if (url.contains("instagram") || url.contains("fbcdn")) {
-                    addRequestHeader("Referer", "https://www.instagram.com/")
-                }
-                setDescription("Downloading with A2Z Downloader...")
-                setTitle(fileName)
-                setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-                setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName)
-            }
-
-            val dm = getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
-            dm.enqueue(request)
-            Toast.makeText(this, "Downloading $fileName to Downloads folder", Toast.LENGTH_SHORT).show()
-        } catch (e: Exception) {
-            // Fallback: Open browser intent
+    private fun downloadFileNative(initialUrl: String, userAgent: String, rawFileName: String?, mimeType: String) {
+        Thread {
             try {
-                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
-            } catch (ex: Exception) {
-                Toast.makeText(this, "Download failed: ${e.message}", Toast.LENGTH_SHORT).show()
+                var targetUrl = initialUrl
+
+                // Step 1: Follow any 301, 302, 307 redirects to get the real direct CDN URL
+                try {
+                    val conn = URL(initialUrl).openConnection() as HttpURLConnection
+                    conn.instanceFollowRedirects = false
+                    conn.requestMethod = "HEAD"
+                    conn.setRequestProperty("User-Agent", userAgent)
+                    if (initialUrl.contains("savetube") || initialUrl.contains("yt.savetube")) {
+                        conn.setRequestProperty("Referer", "https://yt.savetube.me/")
+                    } else if (initialUrl.contains("tikwm")) {
+                        conn.setRequestProperty("Referer", "https://www.tikwm.com/")
+                    } else if (initialUrl.contains("instagram") || initialUrl.contains("fbcdn")) {
+                        conn.setRequestProperty("Referer", "https://www.instagram.com/")
+                    }
+                    conn.connectTimeout = 6000
+                    conn.readTimeout = 6000
+                    val code = conn.responseCode
+                    if (code in 300..399) {
+                        val loc = conn.getHeaderField("Location")
+                        if (!loc.isNullOrBlank()) {
+                            targetUrl = loc
+                        }
+                    }
+                    conn.disconnect()
+                } catch (e: Exception) {
+                    // ignore redirect check error, use initialUrl
+                }
+
+                // Step 2: Clean and validate file name
+                val cleanFileName = if (!rawFileName.isNullOrBlank() && !rawFileName.startsWith("attachment")) {
+                    rawFileName.replace(Regex("[^a-zA-Z0-9._-]"), "_")
+                } else {
+                    URLUtil.guessFileName(targetUrl, null, mimeType)
+                }
+
+                val safeFileName = if (cleanFileName.length > 50) {
+                    val dotIdx = cleanFileName.lastIndexOf('.')
+                    if (dotIdx > 0) cleanFileName.substring(0, 44) + cleanFileName.substring(dotIdx) else cleanFileName.substring(0, 50)
+                } else cleanFileName
+
+                // Step 3: Configure native DownloadManager request with proper CDN Referer
+                val request = DownloadManager.Request(Uri.parse(targetUrl)).apply {
+                    setMimeType(mimeType)
+                    addRequestHeader("User-Agent", userAgent)
+                    if (targetUrl.contains("savetube") || targetUrl.contains("yt.savetube")) {
+                        addRequestHeader("Referer", "https://yt.savetube.me/")
+                    } else if (targetUrl.contains("tikwm")) {
+                        addRequestHeader("Referer", "https://www.tikwm.com/")
+                    } else if (targetUrl.contains("instagram") || targetUrl.contains("fbcdn")) {
+                        addRequestHeader("Referer", "https://www.instagram.com/")
+                    }
+                    setDescription("Downloading with A2Z Downloader...")
+                    setTitle(safeFileName)
+                    setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                    setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, safeFileName)
+                }
+
+                val dm = getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+                val downloadId = dm.enqueue(request)
+
+                runOnUiThread {
+                    Toast.makeText(this@MainActivity, "⬇️ Downloading $safeFileName...", Toast.LENGTH_SHORT).show()
+                }
+
+                // Step 4: Real-time progress monitoring loop
+                var isTracking = true
+                var failCount = 0
+                while (isTracking) {
+                    Thread.sleep(750)
+                    val q = DownloadManager.Query().setFilterById(downloadId)
+                    val cursor = dm.query(q)
+                    if (cursor != null && cursor.moveToFirst()) {
+                        val bytesDownloaded = cursor.getLong(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR))
+                        val totalBytes = cursor.getLong(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_TOTAL_SIZE_BYTES))
+                        val status = cursor.getInt(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS))
+
+                        val percent = if (totalBytes > 0) ((bytesDownloaded * 100L) / totalBytes).toInt() else 0
+
+                        runOnUiThread {
+                            val js = "window.onNativeDownloadProgress?.($downloadId, $percent, $bytesDownloaded, $totalBytes, '$safeFileName')"
+                            webView.evaluateJavascript(js, null)
+                        }
+
+                        if (status == DownloadManager.STATUS_SUCCESSFUL) {
+                            isTracking = false
+                            runOnUiThread {
+                                Toast.makeText(this@MainActivity, "✅ $safeFileName Downloaded!", Toast.LENGTH_LONG).show()
+                                webView.evaluateJavascript("window.onNativeDownloadComplete?.($downloadId, '$safeFileName')", null)
+                            }
+                        } else if (status == DownloadManager.STATUS_FAILED) {
+                            isTracking = false
+                            val reason = cursor.getInt(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_REASON))
+                            runOnUiThread {
+                                Toast.makeText(this@MainActivity, "Download failed (code: $reason). Opening direct stream...", Toast.LENGTH_LONG).show()
+                                webView.evaluateJavascript("window.onNativeDownloadFailed?.($downloadId, '$safeFileName', $reason)", null)
+                                try {
+                                    startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(targetUrl)))
+                                } catch (e: Exception) {}
+                            }
+                        }
+                    } else {
+                        failCount++
+                        if (failCount > 10) isTracking = false
+                    }
+                    cursor?.close()
+                }
+            } catch (e: Exception) {
+                runOnUiThread {
+                    Toast.makeText(this@MainActivity, "Download error: ${e.message}", Toast.LENGTH_SHORT).show()
+                    try {
+                        startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(initialUrl)))
+                    } catch (ex: Exception) {}
+                }
             }
-        }
+        }.start()
     }
 
     private fun checkPermissions() {
