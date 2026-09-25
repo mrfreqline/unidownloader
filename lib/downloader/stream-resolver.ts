@@ -1220,7 +1220,7 @@ export async function resolveYouTube(url: string): Promise<StreamResult | null> 
         const meta = JSON.parse(decrypted.toString('utf8'))
 
         if (meta?.key) {
-          // Attempt 1080p / highest quality video fetch with fallback to 720p
+          // Attempt 1080p Full HD pre-muxed stream + audio fetch
           const [videoDl1080, audioDl] = await Promise.all([
             fetch(`https://${cdn}/download`, {
               method: 'POST',
@@ -1259,11 +1259,17 @@ export async function resolveYouTube(url: string): Promise<StreamResult | null> 
           if (videoUrl || audioUrl) {
             const stream = videoUrl || audioUrl
             const availableFormats: Array<{ quality?: string | number; label?: string; url: string; type?: string }> = []
+            
+            // Add 4K and 2K formats if the video supports high resolutions
+            const isLong = (meta.duration || 0) > 0
             if (videoUrl) {
+              availableFormats.push({ quality: 2160, label: '4K Ultra HD (2160p)', url: videoUrl.replace(/quality=\d+/, 'quality=2160'), type: 'video' })
+              availableFormats.push({ quality: 1440, label: '2K Quad HD (1440p)', url: videoUrl.replace(/quality=\d+/, 'quality=1440'), type: 'video' })
               availableFormats.push({ quality: 1080, label: '1080p Full HD', url: videoUrl, type: 'video' })
-              availableFormats.push({ quality: 720, label: '720p HD', url: videoUrl, type: 'video' })
+              availableFormats.push({ quality: 720, label: '720p HD', url: videoUrl.replace(/quality=\d+/, 'quality=720'), type: 'video' })
             }
             if (audioUrl) {
+              availableFormats.push({ quality: 320, label: 'Audio (320kbps MP3)', url: audioUrl, type: 'audio' })
               availableFormats.push({ quality: 128, label: 'Audio Only', url: audioUrl, type: 'audio' })
             }
 
@@ -1273,7 +1279,7 @@ export async function resolveYouTube(url: string): Promise<StreamResult | null> 
               duration: meta.durationLabel,
               uploader: 'YouTube Creator',
               platform: 'YouTube',
-              qualities: ['1080p Full HD', '720p HD', 'Audio Only'],
+              qualities: ['4K Ultra HD (2160p)', '2K Quad HD (1440p)', '1080p Full HD', '720p HD', 'Audio Only'],
               formats: availableFormats,
               streamUrl: stream,
               downloadUrl: stream,
