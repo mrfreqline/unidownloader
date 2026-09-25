@@ -70,6 +70,22 @@ export default function StudioEditorPage() {
   const [currentTime, setCurrentTime] = useState<number>(0)
   const [duration, setDuration] = useState<number>(0)
   const [isMuted, setIsMuted] = useState<boolean>(false)
+  const [playbackSpeed, setPlaybackSpeed] = useState<number>(1)
+  const [showSpeedMenu, setShowSpeedMenu] = useState<boolean>(false)
+
+  const handleSpeedChange = (spd: number) => {
+    setPlaybackSpeed(spd)
+    setShowSpeedMenu(false)
+    if (videoRef.current) videoRef.current.playbackRate = spd
+    if (audioRef.current) audioRef.current.playbackRate = spd
+  }
+
+  const formatPlayerTime = (sec: number) => {
+    const totalSecs = Math.max(0, Math.floor(sec))
+    const m = Math.floor(totalSecs / 60)
+    const s = totalSecs % 60
+    return `${m}:${String(s).padStart(2, '0')}`
+  }
 
   // Layout / Aspect Ratio Framing (9:16 Shorts/Reels, 16:9 Cinema, 1:1 Square)
   const [aspectRatio, setAspectRatio] = useState<'9:16' | '16:9' | '1:1'>('9:16')
@@ -751,192 +767,105 @@ export default function StudioEditorPage() {
     setBlurPadding(true)
   }
 
-  // 1. REAL VIDEO EXPORT WITH SOUND & 4K/HD RESOLUTION
+  // 1. REAL VIDEO EXPORT WITH SOUND & 4K/HD RESOLUTION (Universal Windows Media Player & Phone Compatible)
   const handleExportRealVideo = async () => {
-    const canvas = canvasRef.current
-    const video = videoRef.current
-    if (!canvas || !video) return
-
     setIsExporting(true)
-    setExportProgress(5)
-    setExportStatusText('Initializing audio/video rendering pipeline...')
+    setExportProgress(15)
+    setExportStatusText('Rendering studio-grade MP4 with FFmpeg (Universal 1080p/4K)...')
 
-    const prevMuted = video.muted
+    const cleanTitle = (videoTitle || 'edited_video').replace(/[^\w\s.-]/gi, '_')
+    const finalFilename = `${cleanTitle}_edited_${aspectRatio.replace(':', 'x')}.mp4`
+
     try {
-      // Ensure video and separate audio track are unmuted and at full volume
-      video.muted = false
-      video.volume = 1.0
-      if (audioRef.current) {
-        audioRef.current.muted = false
-        audioRef.current.volume = 1.0
-        audioRef.current.currentTime = clipStart
-        await audioRef.current.play().catch(() => {})
+      const targetUrl = origUrl || videoSrc
+      if (!targetUrl) {
+        throw new Error('No media source available for rendering.')
       }
 
-      // Seek video to exact clipStart
-      video.currentTime = clipStart
-      setCurrentTime(clipStart)
-      await video.play().catch(() => {})
-      if (audioRef.current && audioSrc) {
-        audioRef.current.currentTime = clipStart
-        audioRef.current.play().catch(() => {})
-      }
-      setIsPlaying(true)
+      setExportProgress(35)
+      setExportStatusText('Applying 9:16 aspect ratio & smooth 30fps CFR encoding...')
 
-      // 1. Video track from dynamic Canvas
-      const canvasStream = canvas.captureStream(30)
-      const videoTracks = canvasStream.getVideoTracks()
-
-      // 2. Audio track extraction from HTML5 Video and separate Audio element
-      let audioTracks: MediaStreamTrack[] = []
-
-      // Method A: Direct HTMLMediaElement captureStream from video (Standard HTML5 native audio capture)
-      try {
-        const vidElement = video as any
-        const vidStream = vidElement.captureStream
-          ? vidElement.captureStream()
-          : vidElement.mozCaptureStream
-          ? vidElement.mozCaptureStream()
-          : null
-        if (vidStream && vidStream.getAudioTracks().length > 0) {
-          audioTracks = vidStream.getAudioTracks()
-        }
-      } catch (e) {
-        console.warn('[Direct captureStream audio warn]:', e)
-      }
-
-      // Method B: Web Audio API (Universal fallback for cross-browser audio muxing)
-      if (audioTracks.length === 0) {
-        try {
-          const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext
-          if (AudioContextClass) {
-            if (!actxRef.current) {
-              actxRef.current = new AudioContextClass()
-            }
-            const actx = actxRef.current
-            if (actx.state === 'suspended') {
-              await actx.resume()
-            }
-            const dest = actx.createMediaStreamDestination()
-            audioDestNodeRef.current = dest
-
-            const targetElement = (audioSrc && audioRef.current) ? audioRef.current : video
-            if (targetElement) {
-              try {
-                if (!audioSourceNodeRef.current) {
-                  audioSourceNodeRef.current = actx.createMediaElementSource(targetElement)
-                }
-                audioSourceNodeRef.current.connect(dest)
-                audioSourceNodeRef.current.connect(actx.destination)
-              } catch (srcErr) {
-                console.warn('[MediaElementSource node reuse/connect]:', srcErr)
-              }
-            }
-            if (audioDestNodeRef.current) {
-              audioTracks = audioDestNodeRef.current.stream.getAudioTracks()
-            }
-          }
-        } catch (e) {
-          console.warn('[WebAudio audio capture warn]:', e)
-        }
-      }
-
-      // Method D: Generate synthetic silent audio track if stream has no audio so video container preserves audio channel
-      if (audioTracks.length === 0) {
-        try {
-          const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext
-          if (AudioContextClass) {
-            const fallbackCtx = new AudioContextClass()
-            const osc = fallbackCtx.createOscillator()
-            const gain = fallbackCtx.createGain()
-            gain.gain.value = 0
-            osc.connect(gain)
-            const dest = fallbackCtx.createMediaStreamDestination()
-            gain.connect(dest)
-            osc.start()
-            audioTracks = dest.stream.getAudioTracks()
-          }
-        } catch {}
-      }
-
-      // Combine video from Canvas + audio from Video/Audio elements
-      const combinedTracks = [...videoTracks, ...audioTracks]
-      const combinedStream = new MediaStream(combinedTracks)
-
-      const mimeCandidates = [
-        'video/mp4; codecs="avc1.42E01E, mp4a.40.2"',
-        'video/mp4',
-        'video/webm; codecs=vp9,opus',
-        'video/webm; codecs=vp8,opus',
-        'video/webm',
-      ]
-      const mimeType = mimeCandidates.find(t => MediaRecorder.isTypeSupported(t)) || 'video/webm'
-
-      const is4K = targetQuality.includes('4K') || targetQuality.includes('2160')
-      const recorder = new MediaRecorder(combinedStream, {
-        mimeType,
-        videoBitsPerSecond: is4K ? 24000000 : 12000000, // 24 Mbps for 4K, 12 Mbps for 1080p
-        audioBitsPerSecond: 256000, // 256 kbps studio audio
-      })
-
-      const chunks: Blob[] = []
-      recorder.ondataavailable = e => {
-        if (e.data && e.data.size > 0) chunks.push(e.data)
-      }
-
-      recorder.onstop = () => {
-        video.muted = prevMuted
-        if (audioRef.current) audioRef.current.pause()
-        const ext = mimeType.includes('mp4') ? 'mp4' : 'webm'
-        const blob = new Blob(chunks, { type: mimeType })
-        const url = URL.createObjectURL(blob)
-        const a = document.createElement('a')
-        a.href = url
-        a.download = `${videoTitle}_edited_${aspectRatio.replace(':', 'x')}.${ext}`
-        document.body.appendChild(a)
-        a.click()
-        document.body.removeChild(a)
-        window.URL.revokeObjectURL(url)
+      // Check if running inside Android APK (VidMate-style native download)
+      if (typeof window !== 'undefined' && (window as any).AndroidBridge?.download) {
+        const queryParams = new URLSearchParams({
+          url: targetUrl,
+          quality: targetQuality || '1080p Full HD',
+          mediaType: 'video',
+          title: finalFilename,
+          trimEnabled: 'true',
+          trimStart: String(clipStart),
+          trimEnd: String(clipStart + (clipDuration || duration || 60)),
+          aspectRatio: aspectRatio,
+        })
+        const downloadHref = `${window.location.origin}/api/download?${queryParams.toString()}`
+        ;(window as any).AndroidBridge.download(downloadHref, finalFilename, 'video/mp4')
 
         setExportProgress(100)
-        setExportStatusText('HD Video with Audio Exported Successfully!')
+        setExportStatusText('Export queued to Android Downloads! (Check notification bar)')
         setTimeout(() => {
           setIsExporting(false)
           setExportProgress(0)
           setExportStatusText('')
-        }, 1500)
+        }, 2500)
+        return
       }
 
-      recorder.start()
+      // Web Browser & Windows PC Desktop: Request serverless FFmpeg render
+      const res = await fetch('/api/download', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          url: targetUrl,
+          quality: targetQuality || '1080p Full HD',
+          mediaType: 'video',
+          title: finalFilename,
+          enhancement: {
+            enabled: true,
+            trimEnabled: true,
+            trimStart: clipStart,
+            trimEnd: clipStart + (clipDuration || duration || 60),
+            aspectRatio: aspectRatio,
+            targetFormat: 'mp4',
+            compressionLevel: 'original',
+          },
+        }),
+      })
 
-      // Record for exact clipDuration or until video finishes
-      const targetDuration = clipDuration > 0 ? clipDuration : Math.min(60, video.duration || 60)
-      let elapsed = 0
-      const interval = setInterval(() => {
-        elapsed += 1
-        setExportProgress(Math.min(95, Math.round((elapsed / targetDuration) * 100)))
-        if (
-          elapsed >= targetDuration ||
-          video.ended ||
-          (clipDuration > 0 && video.currentTime >= clipStart + clipDuration)
-        ) {
-          clearInterval(interval)
-          recorder.stop()
-          video.pause()
-          if (audioRef.current) audioRef.current.pause()
-          setIsPlaying(false)
-        }
-      }, 1000)
-    } catch (err: any) {
-      console.error('[Video recording error]:', err)
-      video.muted = prevMuted
-      // Fallback: If browser restricts canvas captureStream, download current frame snapshot
-      const dataUrl = canvas.toDataURL('image/png')
+      setExportProgress(75)
+      setExportStatusText('Finalizing MP4 container with faststart header for instant playback...')
+
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}))
+        throw new Error(errJson.error || 'Server rendering failed')
+      }
+
+      const blob = await res.blob()
+      const blobUrl = window.URL.createObjectURL(blob)
+
       const a = document.createElement('a')
-      a.href = dataUrl
-      a.download = `${videoTitle}_frame.png`
+      a.href = blobUrl
+      a.download = finalFilename
+      document.body.appendChild(a)
       a.click()
-      setIsExporting(false)
+      document.body.removeChild(a)
+
+      setTimeout(() => {
+        window.URL.revokeObjectURL(blobUrl)
+      }, 5000)
+
+      setExportProgress(100)
+      setExportStatusText('HD Video Exported Successfully! (100% Windows & Phone Compatible)')
+      setTimeout(() => {
+        setIsExporting(false)
+        setExportProgress(0)
+        setExportStatusText('')
+      }, 2500)
+    } catch (err: any) {
+      console.error('[Video export error]:', err)
+      setExportStatusText(`Export failed: ${err?.message || 'Error'}. Please try again.`)
+      setTimeout(() => {
+        setIsExporting(false)
+      }, 3500)
     }
   }
 
@@ -1168,64 +1097,111 @@ export default function StudioEditorPage() {
           {/* LEFT: Live Stage / Canvas Rendering Viewport */}
           <div className="lg:col-span-7 flex flex-col items-center justify-center rounded-2xl bg-white dark:bg-[#12151a] border border-zinc-200 dark:border-white/10 p-4 sm:p-6 shadow-xs space-y-4">
             
-            {/* Viewport Frame */}
-            <div className={`relative w-full max-w-[380px] ${aspectRatio === '16:9' ? 'aspect-video' : aspectRatio === '1:1' ? 'aspect-square' : 'aspect-[9/16]'} rounded-2xl overflow-hidden bg-black shadow-2xl border border-zinc-300 dark:border-white/10 flex items-center justify-center`}>
+            {/* Viewport Frame with Docked HTML5 Native-Style Control Bar */}
+            <div className={`relative w-full max-w-[380px] ${aspectRatio === '16:9' ? 'aspect-video' : aspectRatio === '1:1' ? 'aspect-square' : 'aspect-[9/16]'} rounded-2xl overflow-hidden bg-black shadow-2xl border border-zinc-300 dark:border-white/10 flex flex-col justify-end group`}>
               <canvas
                 ref={canvasRef}
-                className="w-full h-full object-contain"
+                className="w-full h-full object-contain cursor-pointer"
+                onClick={togglePlay}
               />
 
-              {/* Play Overlay Button */}
+              {/* Native-Style HTML5 Video Control Bar (Matches User Screenshot) */}
               {videoSrc && (
-                <button
-                  onClick={togglePlay}
-                  className={`absolute inset-0 m-auto w-14 h-14 rounded-full bg-black/60 hover:bg-black/80 backdrop-blur-md text-white border border-white/20 flex items-center justify-center transition active:scale-95 cursor-pointer shadow-xl ${
-                    isPlaying ? 'opacity-0 hover:opacity-100' : 'opacity-90 hover:opacity-100 scale-105'
-                  }`}
-                >
-                  {isPlaying ? <Pause className="w-6 h-6 fill-current" /> : <Play className="w-6 h-6 fill-current ml-1" />}
-                </button>
+                <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/95 via-black/80 to-transparent px-3 py-2.5 pt-7 flex flex-col gap-2 transition-opacity duration-200">
+                  {/* Full-Width Smooth Scrubber Bar */}
+                  <div className="relative w-full flex items-center">
+                    <input
+                      type="range"
+                      min={clipStart}
+                      max={clipStart + (clipDuration || duration || 60)}
+                      step={0.1}
+                      value={currentTime}
+                      onChange={(e) => {
+                        const val = parseFloat(e.target.value)
+                        setCurrentTime(val)
+                        if (videoRef.current) videoRef.current.currentTime = val
+                        if (audioRef.current) audioRef.current.currentTime = val
+                      }}
+                      className="w-full h-1 bg-white/30 rounded-lg appearance-none cursor-pointer accent-white hover:h-1.5 transition-all"
+                    />
+                  </div>
+
+                  {/* Controls Row: Play/Pause, 0:09 / 1:13, Volume, Speed, Export */}
+                  <div className="flex items-center justify-between text-white text-xs font-mono select-none">
+                    <div className="flex items-center gap-2.5">
+                      {/* Play/Pause Button */}
+                      <button
+                        type="button"
+                        onClick={togglePlay}
+                        className="p-1 hover:text-emerald-400 transition cursor-pointer flex items-center justify-center"
+                        title={isPlaying ? 'Pause' : 'Play'}
+                      >
+                        {isPlaying ? (
+                          <Pause className="w-4 h-4 fill-current" />
+                        ) : (
+                          <Play className="w-4 h-4 fill-current ml-0.5" />
+                        )}
+                      </button>
+
+                      {/* Timestamp e.g. 0:09 / 1:13 */}
+                      <span className="text-[11px] font-mono text-zinc-300">
+                        {formatPlayerTime(Math.max(0, currentTime - clipStart))} / {formatPlayerTime(clipDuration || duration || 60)}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-2 relative">
+                      {/* Volume / Mute */}
+                      <button
+                        type="button"
+                        onClick={() => setIsMuted(!isMuted)}
+                        className="p-1 text-zinc-300 hover:text-white transition cursor-pointer"
+                        title={isMuted ? 'Unmute' : 'Mute'}
+                      >
+                        {isMuted ? <VolumeX className="w-3.5 h-3.5" /> : <Volume2 className="w-3.5 h-3.5" />}
+                      </button>
+
+                      {/* Playback Speed Dropdown */}
+                      <div className="relative">
+                        <button
+                          type="button"
+                          onClick={() => setShowSpeedMenu(!showSpeedMenu)}
+                          className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-white/10 hover:bg-white/20 text-zinc-200 transition cursor-pointer flex items-center gap-0.5"
+                          title="Playback Speed"
+                        >
+                          <span>{playbackSpeed}x</span>
+                        </button>
+
+                        {showSpeedMenu && (
+                          <div className="absolute bottom-full right-0 mb-2 py-1 w-20 rounded-lg bg-zinc-900 border border-white/15 shadow-2xl flex flex-col z-50">
+                            {[0.5, 1, 1.25, 1.5, 2].map((spd) => (
+                              <button
+                                key={spd}
+                                type="button"
+                                onClick={() => handleSpeedChange(spd)}
+                                className={`px-2 py-1 text-left text-[11px] hover:bg-white/10 transition ${playbackSpeed === spd ? 'text-emerald-400 font-bold' : 'text-zinc-300'}`}
+                              >
+                                {spd}x
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Export / Download Clip Button right on player */}
+                      <button
+                        type="button"
+                        onClick={handleExportRealVideo}
+                        disabled={isExporting}
+                        className="p-1 text-zinc-300 hover:text-emerald-400 transition cursor-pointer disabled:opacity-50"
+                        title="Render & Download Video (MP4)"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
               )}
             </div>
-
-            {/* Playback Controls Bar */}
-            {videoSrc && (
-              <div className="w-full max-w-[380px] flex items-center justify-between gap-3 text-xs font-mono text-zinc-500 pt-2">
-                <button
-                  onClick={togglePlay}
-                  className="p-2 rounded-lg bg-zinc-100 dark:bg-[#171b21] hover:bg-zinc-200 dark:hover:bg-[#1e232b] text-zinc-900 dark:text-white transition cursor-pointer"
-                >
-                  {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
-                </button>
-
-                <div className="flex-1 flex items-center gap-2">
-                  <span>{Math.floor(Math.max(0, currentTime - clipStart))}s</span>
-                  <input
-                    type="range"
-                    min={clipStart}
-                    max={clipStart + (clipDuration || duration || 60)}
-                    step={0.1}
-                    value={currentTime}
-                    onChange={(e) => {
-                      const val = parseFloat(e.target.value)
-                      setCurrentTime(val)
-                      if (videoRef.current) videoRef.current.currentTime = val
-                      if (audioRef.current) audioRef.current.currentTime = val
-                    }}
-                    className="flex-1 h-1.5 rounded-lg bg-zinc-200 dark:bg-zinc-800 accent-emerald-500 cursor-pointer"
-                  />
-                  <span>{Math.floor(clipDuration || duration || 60)}s</span>
-                </div>
-
-
-                <button
-                  onClick={() => setIsMuted(!isMuted)}
-                  className="p-2 rounded-lg bg-zinc-100 dark:bg-[#171b21] hover:bg-zinc-200 dark:hover:bg-[#1e232b] text-zinc-900 dark:text-white transition cursor-pointer"
-                >
-                  {isMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
-                </button>
-              </div>
-            )}
           </div>
 
           {/* RIGHT: Studio Toolset Panel */}

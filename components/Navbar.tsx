@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import {
   Download,
@@ -62,11 +62,25 @@ export default function Navbar({
     }
   }
 
+  const [platformName, setPlatformName] = useState<'APK' | 'Windows' | 'Web'>('Web')
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      if ((window as any).AndroidBridge || /A2ZDownloaderApp/i.test(navigator.userAgent)) {
+        setPlatformName('APK')
+      } else if (/Windows/i.test(navigator.userAgent) && (window.matchMedia('(display-mode: standalone)').matches || window.location.search.includes('platform=windows'))) {
+        setPlatformName('Windows')
+      } else {
+        setPlatformName('Web')
+      }
+    }
+  }, [])
+
   return (
     <header className="sticky top-0 z-50 w-full border-b border-zinc-200 dark:border-white/10 bg-white/85 dark:bg-[#090b0e]/85 backdrop-blur-xl transition-colors duration-200">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-3">
         
-        {/* Left: Brand Identity */}
+        {/* Left: Brand Identity with Platform Indicator */}
         <div className="flex items-center gap-3">
           <Link
             href="/"
@@ -82,14 +96,31 @@ export default function Navbar({
               <img src="/logo-icon.jpg" alt="A2Z Downloader" className="w-full h-full object-cover" />
             </div>
             <div className="flex flex-col">
-              <span className="text-base font-bold tracking-tight text-zinc-900 dark:text-white flex items-center gap-1">
-                <span className="bg-gradient-to-r from-emerald-400 via-teal-300 to-cyan-400 bg-clip-text text-transparent">
-                  A2Z
+              <div className="flex items-center gap-1.5">
+                <span className="text-base font-bold tracking-tight text-zinc-900 dark:text-white flex items-center gap-1">
+                  <span className="bg-gradient-to-r from-emerald-400 via-teal-300 to-cyan-400 bg-clip-text text-transparent">
+                    A2Z
+                  </span>
+                  <span>Downloader</span>
                 </span>
-                <span>Downloader</span>
-              </span>
+                {platformName === 'APK' && (
+                  <span className="px-1.5 py-0.2 rounded-full text-[9px] font-mono font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                    APK
+                  </span>
+                )}
+                {platformName === 'Windows' && (
+                  <span className="px-1.5 py-0.2 rounded-full text-[9px] font-mono font-bold bg-blue-500/15 text-blue-400 border border-blue-500/30">
+                    PC
+                  </span>
+                )}
+                {platformName === 'Web' && (
+                  <span className="px-1.5 py-0.2 rounded-full text-[9px] font-mono font-bold bg-zinc-500/15 text-zinc-400 border border-zinc-500/30">
+                    WEB
+                  </span>
+                )}
+              </div>
               <span className="text-[9px] uppercase font-mono tracking-wider text-zinc-400 hidden sm:inline">
-                Universal Media Engine
+                {platformName === 'APK' ? 'Android Native Engine' : platformName === 'Windows' ? 'Windows Studio Engine' : 'Universal Media Engine'}
               </span>
             </div>
           </Link>

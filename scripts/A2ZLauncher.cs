@@ -10,7 +10,7 @@ namespace A2ZDownloader
         [STAThread]
         public static void Main()
         {
-            string url = "https://a2zdownloader.vercel.app";
+            string url = "https://a2zdownloader.vercel.app?platform=windows";
             try
             {
                 // Check if local Next.js development server is running on localhost:3000
@@ -21,7 +21,7 @@ namespace A2ZDownloader
                 {
                     if (resp.StatusCode == HttpStatusCode.OK)
                     {
-                        url = "http://localhost:3000";
+                        url = "http://localhost:3000?platform=windows";
                     }
                 }
             }

@@ -140,6 +140,13 @@ class MainActivity : AppCompatActivity() {
             val request = DownloadManager.Request(Uri.parse(url)).apply {
                 setMimeType(mimeType)
                 addRequestHeader("User-Agent", userAgent)
+                if (url.contains("savetube") || url.contains("yt.savetube")) {
+                    addRequestHeader("Referer", "https://yt.savetube.me/")
+                } else if (url.contains("tikwm")) {
+                    addRequestHeader("Referer", "https://www.tikwm.com/")
+                } else if (url.contains("instagram") || url.contains("fbcdn")) {
+                    addRequestHeader("Referer", "https://www.instagram.com/")
+                }
                 setDescription("Downloading with A2Z Downloader...")
                 setTitle(fileName)
                 setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
