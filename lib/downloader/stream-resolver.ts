@@ -1096,22 +1096,36 @@ export async function resolveYouTube(url: string): Promise<StreamResult | null> 
 
   // Engine 0: Native High-Throughput yt-dlp Engine (100% Original 4K UHD, 2K, 1080p Creator Streams)
   try {
+    const fs = await import('fs')
+    const path = await import('path')
     const { exec } = await import('child_process')
-    const p = new Promise<StreamResult | null>((resolve) => {
-      const cmd = `python -m yt_dlp --dump-json --no-warnings "${canonicalUrl}"`
-      exec(cmd, { maxBuffer: 30 * 1024 * 1024, timeout: 15000 }, (err, stdout) => {
-        if (!err && stdout) {
-          try {
-            const parsed = parseYouTubeYtDlp(JSON.parse(stdout))
-            if (parsed) return resolve(parsed)
-          } catch {}
-        }
-        resolve(null)
-      })
-    })
 
-    const nativeYt = await p
-    if (nativeYt) return nativeYt
+    const localCandidates = [
+      path.join(process.cwd(), 'yt-dlp.exe'),
+      typeof (process as any).resourcesPath === 'string' ? path.join((process as any).resourcesPath, 'yt-dlp.exe') : '',
+      typeof (process as any).resourcesPath === 'string' ? path.join((process as any).resourcesPath, 'app.asar.unpacked', 'yt-dlp.exe') : '',
+      path.join(process.cwd(), 'yt-dlp'),
+    ].filter(Boolean)
+
+    const binary = localCandidates.find(p => fs.existsSync(p))
+
+    if (binary) {
+      const p = new Promise<StreamResult | null>((resolve) => {
+        const cmd = `"${binary}" --dump-json --no-warnings --format "bv*+ba/b" "${canonicalUrl}"`
+        exec(cmd, { maxBuffer: 50 * 1024 * 1024, timeout: 20000 }, (err, stdout) => {
+          if (!err && stdout) {
+            try {
+              const parsed = parseYouTubeYtDlp(JSON.parse(stdout))
+              if (parsed) return resolve(parsed)
+            } catch {}
+          }
+          resolve(null)
+        })
+      })
+
+      const nativeYt = await p
+      if (nativeYt) return nativeYt
+    }
   } catch (err) {
     console.warn('[YouTube Native yt-dlp]:', err)
   }

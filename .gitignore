@@ -21,6 +21,7 @@
 /build
 /dist/
 *.blockmap
+yt-dlp.exe
 
 # misc
 .DS_Store

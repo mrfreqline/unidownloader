@@ -756,9 +756,9 @@ export default function MediaCard({
                 </span>
               </button>
 
-              {/* Button 2: Render 60s Clip & Edit (Opens Studio Editor) */}
+              {/* Button 2: Render Clip & Edit (Opens Studio Editor) */}
               <Link
-                href={`/editor?src=${encodeURIComponent(media.originalUrl || media.streamUrl || media.downloadUrl || '')}&audio=${encodeURIComponent(media.audioUrl || '')}&origUrl=${encodeURIComponent(media.originalUrl || '')}&title=${encodeURIComponent(media.title)}&start=${enhancement.trimEnabled ? enhancement.trimStart : 0}&duration=${enhancement.trimEnabled ? Math.round(Math.max(1, enhancement.trimEnd - enhancement.trimStart)) : Math.min(media.durationSeconds || 60, 60)}&ratio=9:16&quality=${encodeURIComponent(selectedQuality)}`}
+                href={`/editor?src=${encodeURIComponent(media.originalUrl || media.streamUrl || media.downloadUrl || '')}&audio=${encodeURIComponent(media.audioUrl || '')}&origUrl=${encodeURIComponent(media.originalUrl || '')}&title=${encodeURIComponent(media.title)}&start=${enhancement.trimEnabled ? enhancement.trimStart : 0}&duration=${enhancement.trimEnabled ? Math.round(Math.max(1, enhancement.trimEnd - enhancement.trimStart)) : Math.min(media.durationSeconds || 300, 300)}&ratio=${enhancement.aspectRatio || '16:9'}&quality=${encodeURIComponent(selectedQuality)}`}
                 className="py-3 px-4 rounded-xl font-bold text-xs sm:text-sm bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-950 hover:bg-zinc-800 dark:hover:bg-zinc-200 transition shadow-sm flex items-center justify-center gap-2 text-center cursor-pointer touch-manipulation"
               >
                 <Sparkles className="w-4 h-4 text-emerald-500" />

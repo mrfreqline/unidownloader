@@ -22,6 +22,8 @@ export interface EnhancementSettings {
   audioBitrate: '128k' | '192k' | '320k'
   normalizeAudio: boolean
   muteAudio: boolean
+  aspectRatio?: 'original' | '16:9' | '9:16' | '1:1'
+  targetQuality?: string
 }
 
 interface MediaEnhancerProps {

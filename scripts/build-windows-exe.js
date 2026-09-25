@@ -24,22 +24,37 @@ try {
   }
 }
 
+// Check if yt-dlp.exe is available
+const ytDlpPath = path.join(__dirname, '..', 'yt-dlp.exe')
+if (!fs.existsSync(ytDlpPath)) {
+  console.log('📦 Downloading yt-dlp.exe for native high-definition YouTube processing...')
+  try {
+    execSync('powershell -Command "Invoke-WebRequest -Uri https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe -OutFile yt-dlp.exe"', { stdio: 'inherit' })
+  } catch (err) {
+    console.warn('⚠️ Could not download yt-dlp.exe:', err.message)
+  }
+}
+
 console.log('\n🔨 Packaging Windows Standalone Setup Executable...')
 try {
-  execSync('npx electron-builder --win --x64 -c.extraMetadata.main=electron-main.js', { stdio: 'inherit' })
+  const extraResources = [
+    'node_modules/ffmpeg-static/ffmpeg.exe',
+    'yt-dlp.exe',
+  ].filter(f => fs.existsSync(f)).join(',')
+
+  const extraArg = extraResources ? `-c.extraResources=${extraResources}` : ''
+  console.log(`📦 Bundling native media engines: ${extraResources || 'default'}`)
+
+  execSync(`npx electron-builder --win --x64 -c.extraMetadata.main=electron-main.js ${extraArg}`, { stdio: 'inherit' })
   console.log('\n🎉 SUCCESS! Windows Setup file created inside the `dist/` directory!')
-  console.log('Look for: dist/A2Z-Downloader-Setup.exe')
 
-  const distExe = path.join(__dirname, '..', 'dist', 'A2Z-Downloader-Setup.exe')
-  const publicAppsDir = path.join(__dirname, '..', 'public', 'apps')
-  const targetExe = path.join(publicAppsDir, 'A2Z-Downloader-Setup.exe')
-
-  if (fs.existsSync(distExe)) {
-    if (!fs.existsSync(publicAppsDir)) {
-      fs.mkdirSync(publicAppsDir, { recursive: true })
+  const distDir = path.join(__dirname, '..', 'dist')
+  if (fs.existsSync(distDir)) {
+    const files = fs.readdirSync(distDir)
+    const setupFile = files.find(f => f.endsWith('.exe') && f.toLowerCase().includes('setup'))
+    if (setupFile) {
+      console.log(`✅ Production Installer ready: dist/${setupFile}`)
     }
-    fs.copyFileSync(distExe, targetExe)
-    console.log('✅ Successfully copied fresh build to public/apps/A2Z-Downloader-Setup.exe for web downloads!\n')
   }
 } catch (e) {
   console.log('\n💡 Tip: To build portable/setup EXE anytime on Windows, run:')
