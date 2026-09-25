@@ -810,7 +810,102 @@ export default function StudioEditorPage() {
         return
       }
 
-      // Web Browser & Windows PC Desktop: Request serverless FFmpeg render
+      // High-Performance Local Device Hardware Rendering (0 Vercel CPU / 0 Vercel Bandwidth)
+      const canvas = canvasRef.current
+      const video = videoRef.current
+      if (canvas && video && typeof MediaRecorder !== 'undefined') {
+        try {
+          setExportProgress(20)
+          setExportStatusText('Encoding video locally on your device hardware...')
+
+          const stream = canvas.captureStream(30)
+
+          try {
+            if ((video as any).captureStream) {
+              const vStream = (video as any).captureStream()
+              const audioTrack = vStream.getAudioTracks()[0]
+              if (audioTrack) stream.addTrack(audioTrack)
+            } else if ((video as any).mozCaptureStream) {
+              const vStream = (video as any).mozCaptureStream()
+              const audioTrack = vStream.getAudioTracks()[0]
+              if (audioTrack) stream.addTrack(audioTrack)
+            }
+          } catch (audioErr) {
+            console.warn('[Audio track capture warning]:', audioErr)
+          }
+
+          const mimeType = MediaRecorder.isTypeSupported('video/mp4;codecs=avc1')
+            ? 'video/mp4;codecs=avc1'
+            : MediaRecorder.isTypeSupported('video/mp4')
+            ? 'video/mp4'
+            : MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
+            ? 'video/webm;codecs=vp9'
+            : 'video/webm'
+
+          const recorder = new MediaRecorder(stream, {
+            mimeType,
+            videoBitsPerSecond: targetQuality.includes('4K') ? 16000000 : 8000000,
+          })
+
+          const chunks: Blob[] = []
+          recorder.ondataavailable = (e) => {
+            if (e.data && e.data.size > 0) chunks.push(e.data)
+          }
+
+          const exportDur = clipDuration || duration || 60
+          const startT = clipStart || 0
+          const endT = startT + exportDur
+
+          video.currentTime = startT
+          await video.play().catch(() => {})
+
+          recorder.start(100)
+
+          await new Promise<void>((resolve, reject) => {
+            const checkInterval = setInterval(() => {
+              if (!video || video.ended || video.currentTime >= endT) {
+                clearInterval(checkInterval)
+                recorder.stop()
+                video?.pause()
+                resolve()
+              } else {
+                const elapsed = Math.max(0, video.currentTime - startT)
+                const pct = Math.min(95, Math.round(20 + (elapsed / exportDur) * 75))
+                setExportProgress(pct)
+                setExportStatusText(`Rendering on your device: ${pct}%...`)
+              }
+            }, 250)
+
+            recorder.onerror = (e) => {
+              clearInterval(checkInterval)
+              reject(e)
+            }
+          })
+
+          const finalBlob = new Blob(chunks, { type: mimeType })
+          const blobUrl = window.URL.createObjectURL(finalBlob)
+          const a = document.createElement('a')
+          a.href = blobUrl
+          a.download = finalFilename
+          document.body.appendChild(a)
+          a.click()
+          document.body.removeChild(a)
+          setTimeout(() => window.URL.revokeObjectURL(blobUrl), 5000)
+
+          setExportProgress(100)
+          setExportStatusText('HD Video Exported Successfully! (Rendered 100% locally on your device)')
+          setTimeout(() => {
+            setIsExporting(false)
+            setExportProgress(0)
+            setExportStatusText('')
+          }, 2500)
+          return
+        } catch (localErr) {
+          console.warn('[Local render fallback to server]:', localErr)
+        }
+      }
+
+      // Web Browser Serverless Fallback (Only if local browser recording is unavailable)
       const res = await fetch('/api/download', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
