@@ -53,24 +53,110 @@ function createWindow() {
   // Remove default menu for clean app appearance
   Menu.setApplicationMenu(null)
 
-  // Smart startup URL: detect local dev server on localhost:3000 if running, else load production cloud
-  const probeLocalhost = new Promise(resolve => {
-    if (process.env.ELECTRON_START_URL) {
-      return resolve(process.env.ELECTRON_START_URL)
-    }
-    const req = http.get('http://127.0.0.1:3000', () => {
-      resolve('http://localhost:3000')
-    })
-    req.on('error', () => {
-      resolve('https://a2zdownloader.vercel.app')
-    })
-    req.setTimeout(800, () => {
-      req.destroy()
-      resolve('https://a2zdownloader.vercel.app')
-    })
-  })
+  // Show immediate sleek dark loading splash screen while the local 4K engine boots
+  mainWindow.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(`
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <meta charset="utf-8">
+        <style>
+          body {
+            background-color: #09090b;
+            color: #ffffff;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            user-select: none;
+          }
+          .spinner {
+            width: 44px;
+            height: 44px;
+            border: 3px solid rgba(255, 255, 255, 0.1);
+            border-top-color: #10b981;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin-bottom: 20px;
+          }
+          @keyframes spin {
+            to { transform: rotate(360deg); }
+          }
+          h2 { margin: 0 0 8px 0; font-size: 20px; font-weight: 700; }
+          p { margin: 0; font-size: 13px; color: #a1a1aa; }
+        </style>
+      </head>
+      <body>
+        <div class="spinner"></div>
+        <h2>Starting A2Z Studio Engine</h2>
+        <p>Loading native 4K YouTube processor & local render engine...</p>
+      </body>
+    </html>
+  `))
 
-  probeLocalhost.then(startUrl => {
+  function getTargetAppDir() {
+    if (app.isPackaged) {
+      const unpackedDir = path.join(process.resourcesPath || '', 'app')
+      if (fs.existsSync(unpackedDir)) return unpackedDir
+      const asarDir = path.join(process.resourcesPath || '', 'app.asar')
+      if (fs.existsSync(asarDir)) return asarDir
+    }
+    return __dirname
+  }
+
+  function startEmbeddedEngine() {
+    return new Promise(resolve => {
+      if (process.env.ELECTRON_START_URL) {
+        return resolve(process.env.ELECTRON_START_URL)
+      }
+
+      // Check if developer server is active on localhost:3000
+      const devReq = http.get('http://127.0.0.1:3000', () => {
+        console.log('[A2Z Desktop] Connected to local dev server on port 3000')
+        resolve('http://localhost:3000')
+      })
+
+      devReq.on('error', () => {
+        // Dev server not running: boot local embedded Next.js engine!
+        try {
+          console.log('[A2Z Desktop] Starting embedded local Next.js engine...')
+          const next = require('next')
+          const targetDir = getTargetAppDir()
+          const nextApp = next({ dev: false, dir: targetDir })
+          const handle = nextApp.getRequestHandler()
+
+          nextApp.prepare().then(() => {
+            const server = http.createServer((sReq, sRes) => {
+              handle(sReq, sRes)
+            })
+            server.listen(0, '127.0.0.1', () => {
+              const port = server.address().port
+              console.log(`[A2Z Desktop] Embedded local server listening on http://127.0.0.1:${port}`)
+              resolve(`http://127.0.0.1:${port}`)
+            })
+            server.on('error', sErr => {
+              console.warn('[A2Z Desktop] Server listen error, fallback to cloud:', sErr.message)
+              resolve('https://a2zdownloader.vercel.app')
+            })
+          }).catch(prepErr => {
+            console.warn('[A2Z Desktop] Next.js prepare failed, fallback to cloud:', prepErr.message)
+            resolve('https://a2zdownloader.vercel.app')
+          })
+        } catch (embErr) {
+          console.warn('[A2Z Desktop] Could not start embedded server:', embErr.message)
+          resolve('https://a2zdownloader.vercel.app')
+        }
+      })
+
+      devReq.setTimeout(600, () => {
+        devReq.destroy()
+      })
+    })
+  }
+
+  startEmbeddedEngine().then(startUrl => {
     if (mainWindow && !mainWindow.isDestroyed()) {
       console.log(`[A2Z Desktop] Loading interface from: ${startUrl}`)
       mainWindow.loadURL(startUrl)
@@ -227,7 +313,6 @@ ipcMain.handle('render-local-clip', async (event, options) => {
     aspectRatio = 'original',
     targetQuality = '1080p Full HD',
     finalFilename = 'a2z_edited_clip.mp4',
-    isFullDownload = false,
   } = options || {}
 
   const ffmpegBin = getFfmpegBinary()
@@ -235,32 +320,25 @@ ipcMain.handle('render-local-clip', async (event, options) => {
   const safeTitle = finalFilename.replace(/[^\w\s.-]/gi, '_')
   const savePath = path.join(app.getPath('downloads'), safeTitle)
 
-  const isAudioOnly = targetQuality?.toLowerCase().includes('audio') || finalFilename?.endsWith('.mp3') || targetQuality === 'mp3'
   const is4K = targetQuality?.includes('4K') || targetQuality?.includes('2160')
   const is2K = targetQuality?.includes('2K') || targetQuality?.includes('1440')
   const maxH = is4K ? 2160 : is2K ? 1440 : 1080
 
   const isYouTube = (origUrl && (origUrl.includes('youtube.com') || origUrl.includes('youtu.be'))) ||
                     (inputUrl && (inputUrl.includes('youtube.com') || inputUrl.includes('youtu.be')))
-  const targetYtUrl = (origUrl && (origUrl.includes('youtube.com') || origUrl.includes('youtu.be')))
-    ? origUrl
-    : (inputUrl && (inputUrl.includes('youtube.com') || inputUrl.includes('youtu.be')))
-    ? inputUrl
-    : (origUrl || null)
+  const targetYtUrl = origUrl || (inputUrl.startsWith('http') && !inputUrl.includes('googlevideo.com') ? inputUrl : null)
 
-  // Direct fast section or full download via yt-dlp if it's a YouTube link
+  // Direct fast section download via yt-dlp if it's a YouTube link
   if (isYouTube && targetYtUrl && ytDlpBin) {
     return new Promise((resolve, reject) => {
       const startSec = Math.max(0, trimStart)
       const endSec = startSec + Math.max(1, trimDuration)
       const secRange = `*${startSec}-${endSec}`
-      const formatStr = isAudioOnly
-        ? 'bestaudio/best'
-        : `bestvideo[height<=${maxH}]+bestaudio/best[height<=${maxH}]/best`
+      const formatStr = `bestvideo[height<=${maxH}]+bestaudio/best[height<=${maxH}]/best`
 
-      const tempOut = path.join(app.getPath('temp'), `a2z_raw_${Date.now()}.${isAudioOnly ? 'm4a' : 'mp4'}`)
+      const tempOut = path.join(app.getPath('temp'), `a2z_raw_${Date.now()}.mp4`)
 
-      console.log(`[A2Z yt-dlp] ${isFullDownload ? 'Full download' : 'Section ' + secRange} from ${targetYtUrl} at ${targetQuality}...`)
+      console.log(`[A2Z yt-dlp Clip] Downloading section ${secRange} from ${targetYtUrl} at ${targetQuality}...`)
 
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('render-progress', {
@@ -271,18 +349,14 @@ ipcMain.handle('render-local-clip', async (event, options) => {
       }
 
       const dlArgs = [
+        '--download-sections', secRange,
         '-f', formatStr,
-        '--merge-output-format', isAudioOnly ? 'm4a' : 'mp4',
+        '--merge-output-format', 'mp4',
         '--ffmpeg-location', ffmpegBin,
-        '-o', tempOut,
+        '-o', aspectRatio === 'original' || aspectRatio === '16:9' ? savePath : tempOut,
         '--no-warnings',
+        targetYtUrl,
       ]
-
-      if (!isFullDownload && trimDuration > 0) {
-        dlArgs.unshift('--download-sections', secRange)
-      }
-
-      dlArgs.push(targetYtUrl)
 
       const proc = spawn(ytDlpBin, dlArgs, { windowsHide: true })
 
@@ -290,7 +364,7 @@ ipcMain.handle('render-local-clip', async (event, options) => {
         const text = chunk.toString()
         const pctMatch = text.match(/(\d+\.\d+)%/)
         if (pctMatch) {
-          const dlPct = Math.min(80, Math.round(20 + parseFloat(pctMatch[1]) * 0.60))
+          const dlPct = Math.min(85, Math.round(20 + parseFloat(pctMatch[1]) * 0.65))
           if (mainWindow && !mainWindow.isDestroyed()) {
             mainWindow.webContents.send('render-progress', {
               percent: dlPct,
@@ -302,57 +376,49 @@ ipcMain.handle('render-local-clip', async (event, options) => {
       })
 
       proc.on('close', code => {
-        if (code === 0 && fs.existsSync(tempOut)) {
-          if (mainWindow && !mainWindow.isDestroyed()) {
-            mainWindow.webContents.send('render-progress', {
-              percent: 85,
-              statusText: 'Converting to universal H.264 / AAC MP4 for smooth playback...',
-            })
-          }
-
-          // Build FFmpeg arguments for universal standard H.264/AAC MP4 output
-          let ffArgs = ['-y', '-i', tempOut]
-
-          if (isAudioOnly) {
-            ffArgs.push('-c:a', 'libmp3lame', '-b:a', '320k', savePath)
-          } else {
-            const vfFilters = []
-            if (aspectRatio === '9:16') {
-              const scaleW = is4K ? 2160 : 1080
-              const scaleH = is4K ? 3840 : 1920
-              vfFilters.push(`scale=${scaleW}:${scaleH}:force_original_aspect_ratio=decrease,pad=${scaleW}:${scaleH}:(ow-iw)/2:(oh-ih)/2:black`)
-            } else if (aspectRatio === '1:1') {
-              const sq = is4K ? 2160 : 1080
-              vfFilters.push(`scale=${sq}:${sq}:force_original_aspect_ratio=decrease,pad=${sq}:${sq}:(ow-iw)/2:(oh-ih)/2:black`)
+        if (code === 0) {
+          // If aspect ratio adjustment (9:16 vertical crop) is needed, run quick FFmpeg pass
+          if (aspectRatio === '9:16' && fs.existsSync(tempOut)) {
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              mainWindow.webContents.send('render-progress', {
+                percent: 88,
+                statusText: 'Formatting video into 9:16 vertical Shorts...',
+              })
             }
 
-            if (vfFilters.length > 0) {
-              ffArgs.push('-vf', vfFilters.join(','))
-            }
+            const scaleW = is4K ? 2160 : 1080
+            const scaleH = is4K ? 3840 : 1920
+            const filter = `scale=${scaleW}:${scaleH}:force_original_aspect_ratio=decrease,pad=${scaleW}:${scaleH}:(ow-iw)/2:(oh-ih)/2:black`
 
-            ffArgs.push(
-              '-c:v', 'libx264',
-              '-preset', 'veryfast',
-              '-crf', '18',
-              '-pix_fmt', 'yuv420p',
-              '-c:a', 'aac',
-              '-b:a', '192k',
+            const ffArgs = [
+              '-y', '-i', tempOut,
+              '-vf', filter,
+              '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '18',
+              '-c:a', 'copy',
               '-movflags', '+faststart',
-              savePath
-            )
-          }
+              savePath,
+            ]
 
-          const ffProc = spawn(ffmpegBin, ffArgs, { windowsHide: true })
-          ffProc.on('close', ffCode => {
-            try { fs.unlinkSync(tempOut) } catch {}
+            const ffProc = spawn(ffmpegBin, ffArgs, { windowsHide: true })
+            ffProc.on('close', ffCode => {
+              try { fs.unlinkSync(tempOut) } catch {}
+              if (mainWindow && !mainWindow.isDestroyed()) mainWindow.setProgressBar(-1)
+              if (ffCode === 0 && fs.existsSync(savePath)) {
+                shell.showItemInFolder(savePath)
+                resolve({ success: true, filePath: savePath, filename: safeTitle })
+              } else {
+                reject(new Error(`FFmpeg framing exited with code ${ffCode}`))
+              }
+            })
+          } else {
             if (mainWindow && !mainWindow.isDestroyed()) mainWindow.setProgressBar(-1)
-            if (ffCode === 0 && fs.existsSync(savePath)) {
+            if (fs.existsSync(savePath)) {
               shell.showItemInFolder(savePath)
               resolve({ success: true, filePath: savePath, filename: safeTitle })
             } else {
-              reject(new Error(`FFmpeg processing exited with code ${ffCode}`))
+              reject(new Error('Output file was not generated.'))
             }
-          })
+          }
         } else {
           if (mainWindow && !mainWindow.isDestroyed()) mainWindow.setProgressBar(-1)
           reject(new Error(`yt-dlp exited with code ${code}`))

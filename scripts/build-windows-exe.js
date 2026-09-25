@@ -45,8 +45,8 @@ try {
   const extraArg = extraResources ? `-c.extraResources=${extraResources}` : ''
   console.log(`📦 Bundling native media engines: ${extraResources || 'default'}`)
 
-  execSync(`npx electron-builder --win --x64 -c.extraMetadata.main=electron-main.js ${extraArg}`, { stdio: 'inherit' })
-  console.log('\n🎉 SUCCESS! Windows Setup file created inside the `dist/` directory!')
+  execSync(`npx electron-builder --win --x64 -c.asar=false -c.extraMetadata.main=electron-main.js ${extraArg}`, { stdio: 'inherit' })
+  console.log('\n🎉 SUCCESS! Windows Standalone Executable created inside the `dist/` directory!')
 
   const distDir = path.join(__dirname, '..', 'dist')
   if (fs.existsSync(distDir)) {
