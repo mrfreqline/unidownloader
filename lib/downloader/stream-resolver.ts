@@ -1276,7 +1276,7 @@ export async function resolveYouTube(url: string): Promise<StreamResult | null> 
             return {
               title: meta.title || 'YouTube Video',
               thumbnail: meta.thumbnail || `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
-              duration: meta.durationLabel,
+              duration: meta.durationLabel || (meta.duration ? `${Math.floor(meta.duration / 3600) > 0 ? Math.floor(meta.duration / 3600) + ':' : ''}${String(Math.floor((meta.duration % 3600) / 60)).padStart(2, '0')}:${String(meta.duration % 60).padStart(2, '0')}` : undefined),
               uploader: 'YouTube Creator',
               platform: 'YouTube',
               qualities: ['4K Ultra HD (2160p)', '2K Quad HD (1440p)', '1080p Full HD', '720p HD', 'Audio Only'],

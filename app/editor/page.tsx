@@ -810,10 +810,49 @@ export default function StudioEditorPage() {
         return
       }
 
+      // 2. Windows PC Desktop App (.exe): High-Performance Local FFmpeg Hardware Render
+      if (typeof window !== 'undefined' && (window as any).electronAPI?.renderLocalClip) {
+        setExportProgress(10)
+        setExportStatusText('Initializing native Windows video encoder...')
+
+        const cleanupProgress = (window as any).electronAPI.onRenderProgress((data: { percent: number; statusText: string }) => {
+          setExportProgress(data.percent)
+          setExportStatusText(data.statusText)
+        })
+
+        try {
+          const res = await (window as any).electronAPI.renderLocalClip({
+            inputUrl: targetUrl,
+            audioUrl: audioSrc || undefined,
+            trimStart: clipStart,
+            trimDuration: clipDuration || duration || 60,
+            aspectRatio: aspectRatio,
+            targetQuality: targetQuality,
+            finalFilename: finalFilename,
+          })
+
+          if (cleanupProgress) cleanupProgress()
+
+          if (res?.success) {
+            setExportProgress(100)
+            setExportStatusText('HD Video Exported Successfully! (Saved to Downloads & Highlighted in Explorer)')
+            setTimeout(() => {
+              setIsExporting(false)
+              setExportProgress(0)
+              setExportStatusText('')
+            }, 3000)
+            return
+          }
+        } catch (desktopErr: any) {
+          if (cleanupProgress) cleanupProgress()
+          console.warn('[Desktop Local Render failed, falling back to server]:', desktopErr)
+        }
+      }
+
       setExportProgress(35)
       setExportStatusText('Rendering studio-grade MP4 with FFmpeg (+faststart header)...')
 
-      // Web Browser & Windows PC Desktop: Request serverless FFmpeg render
+      // 3. Web Browser: Request serverless FFmpeg render
       const res = await fetch('/api/download', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

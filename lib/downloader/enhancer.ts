@@ -251,13 +251,21 @@ export async function processMediaEnhancement(
               'fps=15,scale=480:-1:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse',
             ])
           } else {
-            // Lightning-Fast Lossless Stream Copy: completes in ~1 second with 100% original quality
-            cmd.outputOptions([
-              ...mapOpts,
-              '-c', 'copy',
-              '-movflags', '+faststart',
-              '-avoid_negative_ts', 'make_zero',
-            ])
+            // If separate audio (YouTube DASH 4K/1080p) or 4K/2K stream, encode video to H.264 and audio to AAC for 100% Windows Media Player compatibility
+            if (hasSeparateAudio || is4KTier) {
+              cmd.outputOptions([
+                ...mapOpts,
+                ...smoothVideoFlags,
+              ])
+            } else {
+              // Lightning-Fast Lossless Stream Copy: completes in ~1 second with 100% original quality
+              cmd.outputOptions([
+                ...mapOpts,
+                '-c', 'copy',
+                '-movflags', '+faststart',
+                '-avoid_negative_ts', 'make_zero',
+              ])
+            }
           }
         }
       } else {

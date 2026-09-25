@@ -19,6 +19,8 @@
 
 # production
 /build
+/dist/
+*.blockmap
 
 # misc
 .DS_Store
