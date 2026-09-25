@@ -96,48 +96,15 @@ async function handleDownload(params: DownloadParams) {
       )
     }
 
-    const needsAudioExtraction =
-      isAudio &&
-      targetDownloadUrl &&
-      !targetDownloadUrl.toLowerCase().includes('.mp3') &&
-      !targetDownloadUrl.toLowerCase().includes('audio/mpeg')
+    // Only invoke heavy serverless FFmpeg when explicit trimming/clip enhancement is requested
+    const isExplicitTrim = Boolean(enhancement && enhancement.enabled && enhancement.trimEnabled)
 
-    const needsAudioMuxing =
-      !isAudio && Boolean(resolvedAudioUrl) && resolvedAudioUrl !== targetDownloadUrl
-
-    // If user requested Media Enhancement (trimming/aspect ratio/filter) or needs audio extracted or separate video+audio muxed
-    if ((enhancement && enhancement.enabled) || needsAudioExtraction || needsAudioMuxing) {
+    if (isExplicitTrim) {
       try {
-        const effectiveEnhancement =
-          enhancement && enhancement.enabled
-            ? enhancement
-            : needsAudioExtraction
-            ? {
-                enabled: true,
-                targetFormat: 'mp3' as const,
-                audioBitrate: '320k' as const,
-                compressionLevel: 'original' as const,
-                normalizeAudio: false,
-                muteAudio: false,
-                trimEnabled: false,
-                trimStart: 0,
-                trimEnd: 0,
-              }
-            : {
-                enabled: true,
-                targetFormat: 'mp4' as const,
-                compressionLevel: 'original' as const,
-                normalizeAudio: false,
-                muteAudio: false,
-                trimEnabled: false,
-                trimStart: 0,
-                trimEnd: 0,
-              }
-
         const enhanced = await processMediaEnhancement(
           targetDownloadUrl,
           isAudio ? 'audio' : (mediaType || 'video'),
-          effectiveEnhancement,
+          enhancement,
           title,
           resolvedAudioUrl
         )
@@ -185,67 +152,50 @@ async function handleDownload(params: DownloadParams) {
     const ext = isAudio ? 'mp3' : 'mp4'
     const cleanFileName = `${cleanTitle}.${ext}`
 
-    // Direct high-speed CDN URLs (SaveTube, TikWM, etc.)
-    const isDirectCdn =
-      !isAudio && (
-        targetDownloadUrl.includes('savetube') ||
-        targetDownloadUrl.includes('tikwm') ||
-        targetDownloadUrl.includes('fxtwitter') ||
-        targetDownloadUrl.includes('pbcshsnp.com') ||
-        targetDownloadUrl.includes('cshsnpcwio') ||
-        targetDownloadUrl.includes('rapidcdn.app') ||
-        targetDownloadUrl.includes('snapxcdn.com')
-      )
+    const streamHeaders: Record<string, string> = {
+      'User-Agent':
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    }
 
-    if (isDirectCdn) {
-      if (isGetRequest) {
-        return NextResponse.redirect(targetDownloadUrl)
-      }
-      return NextResponse.json({ redirectUrl: targetDownloadUrl, filename: cleanFileName })
+    if (targetDownloadUrl.includes('savetube') || targetDownloadUrl.includes('yt.savetube')) {
+      streamHeaders['Referer'] = 'https://yt.savetube.me/'
+    } else if (targetDownloadUrl.includes('tikwm')) {
+      streamHeaders['Referer'] = 'https://www.tikwm.com/'
+    } else if (targetDownloadUrl.includes('cdninstagram.com') || targetDownloadUrl.includes('fbcdn.net') || targetDownloadUrl.includes('instagram.com')) {
+      streamHeaders['Referer'] = 'https://www.instagram.com/'
+      streamHeaders['Origin'] = 'https://www.instagram.com'
     }
 
     try {
-      const isIgCdn =
-        targetDownloadUrl.includes('cdninstagram.com') ||
-        targetDownloadUrl.includes('fbcdn.net') ||
-        targetDownloadUrl.includes('instagram.com')
-      
       const remoteRes = await fetch(targetDownloadUrl, {
-        headers: {
-          'User-Agent':
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-          ...(isIgCdn ? { Referer: 'https://www.instagram.com/', Origin: 'https://www.instagram.com' } : {}),
-        },
+        headers: streamHeaders,
         signal: AbortSignal.timeout(600000), // 10 minutes safety timeout for large downloads
       })
 
-      if (!remoteRes.ok || !remoteRes.body) {
-        if (isGetRequest) {
-          return NextResponse.redirect(targetDownloadUrl)
+      if (remoteRes.ok && remoteRes.body) {
+        const contentType =
+          remoteRes.headers.get('content-type') || (isAudio ? 'audio/mpeg' : 'video/mp4')
+        const contentLength = remoteRes.headers.get('content-length')
+
+        const responseHeaders = new Headers()
+        responseHeaders.set('Content-Type', contentType)
+        responseHeaders.set('Content-Disposition', `attachment; filename="${cleanFileName}"`)
+        if (contentLength) {
+          responseHeaders.set('Content-Length', contentLength)
         }
-        return NextResponse.json({ redirectUrl: targetDownloadUrl, filename: cleanFileName })
-      }
 
-      const contentType =
-        remoteRes.headers.get('content-type') || (isAudio ? 'audio/mpeg' : 'video/mp4')
-      const contentLength = remoteRes.headers.get('content-length')
-
-      const responseHeaders = new Headers()
-      responseHeaders.set('Content-Type', contentType)
-      responseHeaders.set('Content-Disposition', `attachment; filename="${cleanFileName}"`)
-      if (contentLength) {
-        responseHeaders.set('Content-Length', contentLength)
+        return new NextResponse(remoteRes.body as any, {
+          headers: responseHeaders,
+        })
       }
-
-      return new NextResponse(remoteRes.body as any, {
-        headers: responseHeaders,
-      })
-    } catch {
-      if (isGetRequest) {
-        return NextResponse.redirect(targetDownloadUrl)
-      }
-      return NextResponse.json({ redirectUrl: targetDownloadUrl, filename: cleanFileName })
+    } catch (streamErr) {
+      console.warn('[Direct Stream Fetch Warning]:', streamErr)
     }
+
+    if (isGetRequest) {
+      return NextResponse.redirect(targetDownloadUrl)
+    }
+    return NextResponse.json({ redirectUrl: targetDownloadUrl, filename: cleanFileName })
   } catch (err: any) {
     console.error('[Download Route Error]:', err?.message || err)
     return NextResponse.json(

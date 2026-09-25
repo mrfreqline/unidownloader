@@ -22,6 +22,20 @@ class MainActivity : AppCompatActivity() {
     private lateinit var webView: WebView
     private val appUrl = "https://a2zdownloader.vercel.app"
 
+    inner class AndroidBridge {
+        @JavascriptInterface
+        fun download(url: String, filename: String?, mimeType: String?) {
+            runOnUiThread {
+                downloadFileNative(url, webView.settings.userAgentString, "attachment; filename=\"${filename ?: "download.mp4"}\"", mimeType ?: "video/mp4")
+            }
+        }
+
+        @JavascriptInterface
+        fun isNativeApp(): Boolean {
+            return true
+        }
+    }
+
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -37,19 +51,41 @@ class MainActivity : AppCompatActivity() {
             settings.cacheMode = WebSettings.LOAD_DEFAULT
             settings.userAgentString = settings.userAgentString + " A2ZDownloaderApp/2.0.0"
 
+            addJavascriptInterface(AndroidBridge(), "AndroidBridge")
+
             webViewClient = object : WebViewClient() {
                 override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
-                    val url = request?.url?.toString() ?: return false
+                    val uri = request?.url ?: return false
+                    val url = uri.toString()
+
                     // Handle external intents (WhatsApp, Market, Intent schemes)
                     if (url.startsWith("intent:") || url.startsWith("whatsapp:") || url.startsWith("market:")) {
                         try {
                             val intent = Intent.parseUri(url, Intent.URI_INTENT_SCHEME)
                             startActivity(intent)
-                            return true
                         } catch (e: Exception) {
-                            return true
+                            // ignore
                         }
+                        return true
                     }
+
+                    // Keep app on main domain. Open external ads or links in system browser so WebView state is NEVER lost!
+                    val host = uri.host?.lowercase() ?: ""
+                    val isAppDomain = host == "a2zdownloader.vercel.app" || 
+                                     host.endsWith(".vercel.app") || 
+                                     host == "localhost" || 
+                                     host == "127.0.0.1"
+
+                    if (!isAppDomain) {
+                        try {
+                            val externalIntent = Intent(Intent.ACTION_VIEW, uri)
+                            startActivity(externalIntent)
+                        } catch (e: Exception) {
+                            // ignore
+                        }
+                        return true
+                    }
+
                     return false
                 }
             }
@@ -59,7 +95,7 @@ class MainActivity : AppCompatActivity() {
             }
 
             // Vidmate-Style Native Download Interceptor
-            setDownloadListener { url, userAgent, contentDisposition, mimeType, contentLength ->
+            setDownloadListener { url, userAgent, contentDisposition, mimeType, _ ->
                 downloadFileNative(url, userAgent, contentDisposition, mimeType)
             }
         }

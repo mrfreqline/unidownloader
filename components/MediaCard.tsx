@@ -419,34 +419,24 @@ export default function MediaCard({
         )}
       </div>
 
-      {/* High-Definition In-Browser Streaming Player (Zero Buffering Edge Player) */}
+      {/* High-Definition In-Browser Streaming Player (Zero Buffering Edge Player - Internal Stream Proxy) */}
       {activeTab === 'watch' && (
         <div className="space-y-3 animate-in fade-in-50 duration-200">
           <div className="relative aspect-video w-full rounded-xl overflow-hidden bg-black border border-zinc-200 dark:border-zinc-800 shadow-inner">
-            {ytVideoId ? (
-              <iframe
-                src={`https://www.youtube-nocookie.com/embed/${ytVideoId}?autoplay=1&rel=0&modestbranding=1`}
-                title={media.title}
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                allowFullScreen
-                className="w-full h-full border-0"
-              />
-            ) : (
-              <video
-                src={media.streamUrl || media.downloadUrl}
-                controls
-                playsInline
-                className="w-full h-full object-contain"
-                poster={media.thumbnail}
-              >
-                Your browser does not support HTML5 video playback.
-              </video>
-            )}
+            <video
+              src={`/api/stream-proxy?url=${encodeURIComponent(media.streamUrl || media.downloadUrl || media.originalUrl)}&quality=stream`}
+              controls
+              playsInline
+              className="w-full h-full object-contain"
+              poster={media.thumbnail ? `/api/thumbnail?url=${encodeURIComponent(media.thumbnail)}` : undefined}
+            >
+              Your browser does not support HTML5 video playback.
+            </video>
           </div>
           <div className="flex items-center justify-between text-xs text-zinc-500 font-mono px-1">
             <span className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400 font-semibold">
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              {ytVideoId ? 'Fast CDN Edge Stream (Zero Buffering • Full Stereo Sound)' : 'Direct Video Stream'}
+              Internal Stream Proxy (HTML5 Video Stream)
             </span>
             {media.fileSize && <span>File Size: {media.fileSize}</span>}
           </div>

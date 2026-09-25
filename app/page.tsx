@@ -503,6 +503,15 @@ export default function Home() {
           thumbnailUrl: targetImg,
           title: analyzedMedia?.title || 'image',
         }
+
+        if (typeof window !== 'undefined' && (window as any).AndroidBridge?.download && targetImg) {
+          const imgName = `${(customTitle || analyzedMedia?.title || 'image').slice(0, 30)}.jpg`
+          const imgDownloadUrl = targetImg.startsWith('http') ? `/api/thumbnail?url=${encodeURIComponent(targetImg)}` : targetImg
+          ;(window as any).AndroidBridge.download(imgDownloadUrl, imgName, 'image/jpeg')
+          setDownloadSuccessMsg(`Downloading ${imgName} (Check notification bar)`)
+          setIsDownloading(false)
+          return
+        }
       }
 
       if (!enhancement?.trimEnabled && mediaType !== 'image') {
@@ -514,11 +523,21 @@ export default function Home() {
           downloadUrl: targetUrl,
         })
         const downloadHref = `${endpoint}?${queryParams.toString()}`
+        const filename = `${(customTitle || analyzedMedia?.title || 'media').slice(0, 35)}.${mediaType === 'audio' ? 'mp3' : 'mp4'}`
+        const mimeType = mediaType === 'audio' ? 'audio/mpeg' : 'video/mp4'
+
+        // Vidmate-Style Native Android Download Manager integration
+        if (typeof window !== 'undefined' && (window as any).AndroidBridge?.download) {
+          (window as any).AndroidBridge.download(downloadHref, filename, mimeType)
+          setDownloadSuccessMsg(`Downloading ${filename} (Check notification bar)`)
+          setIsDownloading(false)
+          return
+        }
 
         // Trigger native browser streaming download directly to disk
         const a = document.createElement('a')
         a.href = downloadHref
-        a.download = `${(customTitle || analyzedMedia?.title || 'media').slice(0, 35)}.${mediaType === 'audio' ? 'mp3' : 'mp4'}`
+        a.download = filename
         document.body.appendChild(a)
         a.click()
         document.body.removeChild(a)
