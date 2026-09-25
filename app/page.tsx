@@ -574,6 +574,30 @@ export default function Home() {
           return
         }
 
+        // Windows Desktop App (.exe): Native yt-dlp & FFmpeg 4K/2K/1080p Full Video & Audio Download
+        if (typeof window !== 'undefined' && (window as any).electronAPI?.renderLocalClip) {
+          const dlTitle = `${(customTitle || analyzedMedia?.title || 'media').slice(0, 35)}.${mediaType === 'audio' ? 'mp3' : 'mp4'}`
+          setDownloadSuccessMsg(`Downloading original ${format} media directly on your PC...`)
+          try {
+            const nativeRes = await (window as any).electronAPI.renderLocalClip({
+              inputUrl: targetUrl,
+              origUrl: analyzedMedia?.originalUrl || targetUrl,
+              audioUrl: analyzedMedia?.audioUrl,
+              isFullDownload: true,
+              trimDuration: 0,
+              targetQuality: format,
+              finalFilename: dlTitle,
+            })
+            if (nativeRes?.success) {
+              setDownloadSuccessMsg(`✅ Saved directly to Downloads folder! (${nativeRes.filename})`)
+              setIsDownloading(false)
+              return
+            }
+          } catch (nativeDlErr) {
+            console.warn('[Desktop native full download failed, falling back to browser]:', nativeDlErr)
+          }
+        }
+
         // Trigger native browser streaming download directly to disk
         const a = document.createElement('a')
         a.href = downloadHref

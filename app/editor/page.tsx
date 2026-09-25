@@ -813,6 +813,7 @@ export default function StudioEditorPage() {
         try {
           const res = await (window as any).electronAPI.renderLocalClip({
             inputUrl: targetUrl,
+            origUrl: origUrl || (targetUrl?.includes('youtube.com') || targetUrl?.includes('youtu.be') ? targetUrl : undefined),
             audioUrl: audioSrc || undefined,
             trimStart: clipStart,
             trimDuration: clipDuration || duration || 60,

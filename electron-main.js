@@ -227,6 +227,7 @@ ipcMain.handle('render-local-clip', async (event, options) => {
     aspectRatio = 'original',
     targetQuality = '1080p Full HD',
     finalFilename = 'a2z_edited_clip.mp4',
+    isFullDownload = false,
   } = options || {}
 
   const ffmpegBin = getFfmpegBinary()
@@ -234,25 +235,32 @@ ipcMain.handle('render-local-clip', async (event, options) => {
   const safeTitle = finalFilename.replace(/[^\w\s.-]/gi, '_')
   const savePath = path.join(app.getPath('downloads'), safeTitle)
 
+  const isAudioOnly = targetQuality?.toLowerCase().includes('audio') || finalFilename?.endsWith('.mp3') || targetQuality === 'mp3'
   const is4K = targetQuality?.includes('4K') || targetQuality?.includes('2160')
   const is2K = targetQuality?.includes('2K') || targetQuality?.includes('1440')
   const maxH = is4K ? 2160 : is2K ? 1440 : 1080
 
   const isYouTube = (origUrl && (origUrl.includes('youtube.com') || origUrl.includes('youtu.be'))) ||
                     (inputUrl && (inputUrl.includes('youtube.com') || inputUrl.includes('youtu.be')))
-  const targetYtUrl = origUrl || (inputUrl.startsWith('http') && !inputUrl.includes('googlevideo.com') ? inputUrl : null)
+  const targetYtUrl = (origUrl && (origUrl.includes('youtube.com') || origUrl.includes('youtu.be')))
+    ? origUrl
+    : (inputUrl && (inputUrl.includes('youtube.com') || inputUrl.includes('youtu.be')))
+    ? inputUrl
+    : (origUrl || null)
 
-  // Direct fast section download via yt-dlp if it's a YouTube link
+  // Direct fast section or full download via yt-dlp if it's a YouTube link
   if (isYouTube && targetYtUrl && ytDlpBin) {
     return new Promise((resolve, reject) => {
       const startSec = Math.max(0, trimStart)
       const endSec = startSec + Math.max(1, trimDuration)
       const secRange = `*${startSec}-${endSec}`
-      const formatStr = `bestvideo[height<=${maxH}]+bestaudio/best[height<=${maxH}]/best`
+      const formatStr = isAudioOnly
+        ? 'bestaudio/best'
+        : `bestvideo[height<=${maxH}]+bestaudio/best[height<=${maxH}]/best`
 
-      const tempOut = path.join(app.getPath('temp'), `a2z_raw_${Date.now()}.mp4`)
+      const tempOut = path.join(app.getPath('temp'), `a2z_raw_${Date.now()}.${isAudioOnly ? 'm4a' : 'mp4'}`)
 
-      console.log(`[A2Z yt-dlp Clip] Downloading section ${secRange} from ${targetYtUrl} at ${targetQuality}...`)
+      console.log(`[A2Z yt-dlp] ${isFullDownload ? 'Full download' : 'Section ' + secRange} from ${targetYtUrl} at ${targetQuality}...`)
 
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('render-progress', {
@@ -263,14 +271,18 @@ ipcMain.handle('render-local-clip', async (event, options) => {
       }
 
       const dlArgs = [
-        '--download-sections', secRange,
         '-f', formatStr,
-        '--merge-output-format', 'mp4',
+        '--merge-output-format', isAudioOnly ? 'm4a' : 'mp4',
         '--ffmpeg-location', ffmpegBin,
-        '-o', aspectRatio === 'original' || aspectRatio === '16:9' ? savePath : tempOut,
+        '-o', tempOut,
         '--no-warnings',
-        targetYtUrl,
       ]
+
+      if (!isFullDownload && trimDuration > 0) {
+        dlArgs.unshift('--download-sections', secRange)
+      }
+
+      dlArgs.push(targetYtUrl)
 
       const proc = spawn(ytDlpBin, dlArgs, { windowsHide: true })
 
@@ -278,7 +290,7 @@ ipcMain.handle('render-local-clip', async (event, options) => {
         const text = chunk.toString()
         const pctMatch = text.match(/(\d+\.\d+)%/)
         if (pctMatch) {
-          const dlPct = Math.min(85, Math.round(20 + parseFloat(pctMatch[1]) * 0.65))
+          const dlPct = Math.min(80, Math.round(20 + parseFloat(pctMatch[1]) * 0.60))
           if (mainWindow && !mainWindow.isDestroyed()) {
             mainWindow.webContents.send('render-progress', {
               percent: dlPct,
@@ -290,49 +302,57 @@ ipcMain.handle('render-local-clip', async (event, options) => {
       })
 
       proc.on('close', code => {
-        if (code === 0) {
-          // If aspect ratio adjustment (9:16 vertical crop) is needed, run quick FFmpeg pass
-          if (aspectRatio === '9:16' && fs.existsSync(tempOut)) {
-            if (mainWindow && !mainWindow.isDestroyed()) {
-              mainWindow.webContents.send('render-progress', {
-                percent: 88,
-                statusText: 'Formatting video into 9:16 vertical Shorts...',
-              })
+        if (code === 0 && fs.existsSync(tempOut)) {
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('render-progress', {
+              percent: 85,
+              statusText: 'Converting to universal H.264 / AAC MP4 for smooth playback...',
+            })
+          }
+
+          // Build FFmpeg arguments for universal standard H.264/AAC MP4 output
+          let ffArgs = ['-y', '-i', tempOut]
+
+          if (isAudioOnly) {
+            ffArgs.push('-c:a', 'libmp3lame', '-b:a', '320k', savePath)
+          } else {
+            const vfFilters = []
+            if (aspectRatio === '9:16') {
+              const scaleW = is4K ? 2160 : 1080
+              const scaleH = is4K ? 3840 : 1920
+              vfFilters.push(`scale=${scaleW}:${scaleH}:force_original_aspect_ratio=decrease,pad=${scaleW}:${scaleH}:(ow-iw)/2:(oh-ih)/2:black`)
+            } else if (aspectRatio === '1:1') {
+              const sq = is4K ? 2160 : 1080
+              vfFilters.push(`scale=${sq}:${sq}:force_original_aspect_ratio=decrease,pad=${sq}:${sq}:(ow-iw)/2:(oh-ih)/2:black`)
             }
 
-            const scaleW = is4K ? 2160 : 1080
-            const scaleH = is4K ? 3840 : 1920
-            const filter = `scale=${scaleW}:${scaleH}:force_original_aspect_ratio=decrease,pad=${scaleW}:${scaleH}:(ow-iw)/2:(oh-ih)/2:black`
+            if (vfFilters.length > 0) {
+              ffArgs.push('-vf', vfFilters.join(','))
+            }
 
-            const ffArgs = [
-              '-y', '-i', tempOut,
-              '-vf', filter,
-              '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '18',
-              '-c:a', 'copy',
+            ffArgs.push(
+              '-c:v', 'libx264',
+              '-preset', 'veryfast',
+              '-crf', '18',
+              '-pix_fmt', 'yuv420p',
+              '-c:a', 'aac',
+              '-b:a', '192k',
               '-movflags', '+faststart',
-              savePath,
-            ]
+              savePath
+            )
+          }
 
-            const ffProc = spawn(ffmpegBin, ffArgs, { windowsHide: true })
-            ffProc.on('close', ffCode => {
-              try { fs.unlinkSync(tempOut) } catch {}
-              if (mainWindow && !mainWindow.isDestroyed()) mainWindow.setProgressBar(-1)
-              if (ffCode === 0 && fs.existsSync(savePath)) {
-                shell.showItemInFolder(savePath)
-                resolve({ success: true, filePath: savePath, filename: safeTitle })
-              } else {
-                reject(new Error(`FFmpeg framing exited with code ${ffCode}`))
-              }
-            })
-          } else {
+          const ffProc = spawn(ffmpegBin, ffArgs, { windowsHide: true })
+          ffProc.on('close', ffCode => {
+            try { fs.unlinkSync(tempOut) } catch {}
             if (mainWindow && !mainWindow.isDestroyed()) mainWindow.setProgressBar(-1)
-            if (fs.existsSync(savePath)) {
+            if (ffCode === 0 && fs.existsSync(savePath)) {
               shell.showItemInFolder(savePath)
               resolve({ success: true, filePath: savePath, filename: safeTitle })
             } else {
-              reject(new Error('Output file was not generated.'))
+              reject(new Error(`FFmpeg processing exited with code ${ffCode}`))
             }
-          }
+          })
         } else {
           if (mainWindow && !mainWindow.isDestroyed()) mainWindow.setProgressBar(-1)
           reject(new Error(`yt-dlp exited with code ${code}`))
