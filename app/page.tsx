@@ -526,9 +526,10 @@ export default function Home() {
         const filename = `${(customTitle || analyzedMedia?.title || 'media').slice(0, 35)}.${mediaType === 'audio' ? 'mp3' : 'mp4'}`
         const mimeType = mediaType === 'audio' ? 'audio/mpeg' : 'video/mp4'
 
-        // Vidmate-Style Native Android Download Manager integration
+        // Vidmate-Style Native Android Download Manager integration (Direct CDN offload - 0 Vercel Bandwidth)
         if (typeof window !== 'undefined' && (window as any).AndroidBridge?.download) {
-          (window as any).AndroidBridge.download(downloadHref, filename, mimeType)
+          const directStreamUrl = (targetUrl && targetUrl.startsWith('http') && !targetUrl.includes('/api/download')) ? targetUrl : downloadHref
+          ;(window as any).AndroidBridge.download(directStreamUrl, filename, mimeType)
           setDownloadSuccessMsg(`Downloading ${filename} (Check notification bar)`)
           setIsDownloading(false)
           return

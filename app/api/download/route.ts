@@ -152,49 +152,19 @@ async function handleDownload(params: DownloadParams) {
     const ext = isAudio ? 'mp3' : 'mp4'
     const cleanFileName = `${cleanTitle}.${ext}`
 
-    const streamHeaders: Record<string, string> = {
-      'User-Agent':
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    }
-
-    if (targetDownloadUrl.includes('savetube') || targetDownloadUrl.includes('yt.savetube')) {
-      streamHeaders['Referer'] = 'https://yt.savetube.me/'
-    } else if (targetDownloadUrl.includes('tikwm')) {
-      streamHeaders['Referer'] = 'https://www.tikwm.com/'
-    } else if (targetDownloadUrl.includes('cdninstagram.com') || targetDownloadUrl.includes('fbcdn.net') || targetDownloadUrl.includes('instagram.com')) {
-      streamHeaders['Referer'] = 'https://www.instagram.com/'
-      streamHeaders['Origin'] = 'https://www.instagram.com'
-    }
-
-    try {
-      const remoteRes = await fetch(targetDownloadUrl, {
-        headers: streamHeaders,
-        signal: AbortSignal.timeout(600000), // 10 minutes safety timeout for large downloads
-      })
-
-      if (remoteRes.ok && remoteRes.body) {
-        const contentType =
-          remoteRes.headers.get('content-type') || (isAudio ? 'audio/mpeg' : 'video/mp4')
-        const contentLength = remoteRes.headers.get('content-length')
-
-        const responseHeaders = new Headers()
-        responseHeaders.set('Content-Type', contentType)
-        responseHeaders.set('Content-Disposition', `attachment; filename="${cleanFileName}"`)
-        if (contentLength) {
-          responseHeaders.set('Content-Length', contentLength)
-        }
-
-        return new NextResponse(remoteRes.body as any, {
-          headers: responseHeaders,
-        })
-      }
-    } catch (streamErr) {
-      console.warn('[Direct Stream Fetch Warning]:', streamErr)
-    }
-
+    // Bandwidth Optimization: For standard full-length media downloads, redirect the client
+    // DIRECTLY to the source CDN (Cloudflare/SaveTube/TikTok/Instagram/Google CDN).
+    // This reduces Vercel Fast Origin Transfer from 100MB+ per file down to ~350 bytes (307 redirect header),
+    // preventing the free-tier 10 GB limit from ever getting exhausted.
     if (isGetRequest) {
-      return NextResponse.redirect(targetDownloadUrl)
+      return NextResponse.redirect(targetDownloadUrl, {
+        status: 307,
+        headers: {
+          'Cache-Control': 'public, max-age=3600',
+        },
+      })
     }
+
     return NextResponse.json({ redirectUrl: targetDownloadUrl, filename: cleanFileName })
   } catch (err: any) {
     console.error('[Download Route Error]:', err?.message || err)

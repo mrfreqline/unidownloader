@@ -133,6 +133,9 @@ export async function GET(req: NextRequest) {
     const contentRange = upstreamRes.headers.get('content-range')
     if (contentRange) responseHeaders.set('Content-Range', contentRange)
 
+    // Edge cache control to minimize Vercel Fast Origin Transfer
+    responseHeaders.set('Cache-Control', 'public, max-age=14400, s-maxage=86400, stale-while-revalidate=86400')
+
     return new NextResponse(upstreamRes.body, {
       status: upstreamRes.status,
       headers: responseHeaders,
