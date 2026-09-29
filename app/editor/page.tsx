@@ -168,10 +168,16 @@ export default function StudioEditorPage() {
 
       if (rawAudio) {
         const decodedAudio = decodeURIComponent(rawAudio)
-        setAudioSrc(decodedAudio)
+        if (decodedAudio.startsWith('http') && !decodedAudio.includes('/api/stream-proxy')) {
+          setAudioSrc(`/api/stream-proxy?url=${encodeURIComponent(decodedAudio)}&quality=audio`)
+        } else {
+          setAudioSrc(decodedAudio)
+        }
       } else if (rawOrig) {
         const decodedOrig = decodeURIComponent(rawOrig)
-        setAudioSrc(decodedOrig)
+        if (decodedOrig.startsWith('http')) {
+          setAudioSrc(`/api/stream-proxy?url=${encodeURIComponent(decodedOrig)}&quality=audio`)
+        }
       }
 
       if (rawOrig) {
@@ -184,7 +190,11 @@ export default function StudioEditorPage() {
 
       if (rawSrc) {
         const decodedSrc = decodeURIComponent(rawSrc)
-        setVideoSrc(decodedSrc)
+        if (decodedSrc.startsWith('http') && !decodedSrc.includes('/api/stream-proxy')) {
+          setVideoSrc(`/api/stream-proxy?url=${encodeURIComponent(decodedSrc)}&quality=${encodeURIComponent(rawQuality)}`)
+        } else {
+          setVideoSrc(decodedSrc)
+        }
       }
       if (rawTitle) {
         setVideoTitle(decodeURIComponent(rawTitle))
@@ -800,50 +810,10 @@ export default function StudioEditorPage() {
         return
       }
 
-      // 2. Windows PC Desktop App (.exe): High-Performance Local FFmpeg Hardware Render
-      if (typeof window !== 'undefined' && (window as any).electronAPI?.renderLocalClip) {
-        setExportProgress(10)
-        setExportStatusText('Initializing native Windows video encoder...')
-
-        const cleanupProgress = (window as any).electronAPI.onRenderProgress((data: { percent: number; statusText: string }) => {
-          setExportProgress(data.percent)
-          setExportStatusText(data.statusText)
-        })
-
-        try {
-          const res = await (window as any).electronAPI.renderLocalClip({
-            inputUrl: targetUrl,
-            origUrl: origUrl || (targetUrl?.includes('youtube.com') || targetUrl?.includes('youtu.be') ? targetUrl : undefined),
-            audioUrl: audioSrc || undefined,
-            trimStart: clipStart,
-            trimDuration: clipDuration || duration || 60,
-            aspectRatio: aspectRatio,
-            targetQuality: targetQuality,
-            finalFilename: finalFilename,
-          })
-
-          if (cleanupProgress) cleanupProgress()
-
-          if (res?.success) {
-            setExportProgress(100)
-            setExportStatusText('HD Video Exported Successfully! (Saved to Downloads & Highlighted in Explorer)')
-            setTimeout(() => {
-              setIsExporting(false)
-              setExportProgress(0)
-              setExportStatusText('')
-            }, 3000)
-            return
-          }
-        } catch (desktopErr: any) {
-          if (cleanupProgress) cleanupProgress()
-          console.warn('[Desktop Local Render failed, falling back to server]:', desktopErr)
-        }
-      }
-
+      // Render studio-grade MP4 with FFmpeg (+faststart header)
       setExportProgress(35)
       setExportStatusText('Rendering studio-grade MP4 with FFmpeg (+faststart header)...')
 
-      // 3. Web Browser: Request serverless FFmpeg render
       const res = await fetch('/api/download', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

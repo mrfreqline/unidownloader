@@ -410,30 +410,15 @@ export default function Home() {
     setFolderData(null)
 
     try {
-      let data: any = null
-
-      if (typeof window !== 'undefined' && (window as any).electronAPI?.resolveYouTube && (trimmed.includes('youtube.com') || trimmed.includes('youtu.be'))) {
-        try {
-          const nativeData = await (window as any).electronAPI.resolveYouTube(trimmed)
-          if (nativeData && !nativeData.error) {
-            data = nativeData
-          }
-        } catch (nativeErr) {
-          console.warn('[Native yt-dlp inspection fallback to web]:', nativeErr)
-        }
-      }
-
-      if (!data) {
-        const res = await fetch('/api/analyze', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ url: trimmed }),
-        })
-        data = await res.json()
-        if (!res.ok) {
-          setError(data.error || 'Unable to inspect media. Check the link and try again.')
-          return
-        }
+      const res = await fetch('/api/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: trimmed }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        setError(data.error || 'Unable to inspect media. Check the link and try again.')
+        return
       }
 
       if (data.isMaintenance) {
@@ -574,30 +559,6 @@ export default function Home() {
           return
         }
 
-        // Windows Desktop App (.exe): Native yt-dlp & FFmpeg 4K/2K/1080p Full Video & Audio Download
-        if (typeof window !== 'undefined' && (window as any).electronAPI?.renderLocalClip) {
-          const dlTitle = `${(customTitle || analyzedMedia?.title || 'media').slice(0, 35)}.${mediaType === 'audio' ? 'mp3' : 'mp4'}`
-          setDownloadSuccessMsg(`Downloading original ${format} media directly on your PC...`)
-          try {
-            const nativeRes = await (window as any).electronAPI.renderLocalClip({
-              inputUrl: targetUrl,
-              origUrl: analyzedMedia?.originalUrl || targetUrl,
-              audioUrl: analyzedMedia?.audioUrl,
-              isFullDownload: true,
-              trimDuration: 0,
-              targetQuality: format,
-              finalFilename: dlTitle,
-            })
-            if (nativeRes?.success) {
-              setDownloadSuccessMsg(`✅ Saved directly to Downloads folder! (${nativeRes.filename})`)
-              setIsDownloading(false)
-              return
-            }
-          } catch (nativeDlErr) {
-            console.warn('[Desktop native full download failed, falling back to browser]:', nativeDlErr)
-          }
-        }
-
         // Trigger native browser streaming download directly to disk
         const a = document.createElement('a')
         a.href = downloadHref
@@ -633,31 +594,6 @@ export default function Home() {
         setDownloadSuccessMsg(`Download initiated: ${customTitle || analyzedMedia?.title || 'media'}`)
         setIsDownloading(false)
         return
-      }
-
-      // Windows Desktop App: Use native local yt-dlp & FFmpeg to extract clip at original quality
-      if (typeof window !== 'undefined' && (window as any).electronAPI?.renderLocalClip && enhancement?.trimEnabled) {
-        setDownloadSuccessMsg(`Encoding original ${format} clip on your PC hardware...`)
-        try {
-          const nativeRes = await (window as any).electronAPI.renderLocalClip({
-            inputUrl: targetUrl,
-            origUrl: analyzedMedia?.originalUrl || targetUrl,
-            audioUrl: analyzedMedia?.audioUrl,
-            trimStart: enhancement.trimStart || 0,
-            trimDuration: enhancement.trimEnd ? Math.max(1, enhancement.trimEnd - (enhancement.trimStart || 0)) : 60,
-            aspectRatio: enhancement.aspectRatio || 'original',
-            targetQuality: format,
-            finalFilename: `${(customTitle || analyzedMedia?.title || 'media_clip').slice(0, 30)}.${mediaType === 'audio' ? 'mp3' : 'mp4'}`,
-          })
-
-          if (nativeRes?.success) {
-            setDownloadSuccessMsg(`Clip saved directly to your Downloads folder! (${nativeRes.filename})`)
-            setIsDownloading(false)
-            return
-          }
-        } catch (nativeClipErr) {
-          console.warn('[Native Desktop Clip error, falling back to server]:', nativeClipErr)
-        }
       }
 
       const res = await fetch(endpoint, {

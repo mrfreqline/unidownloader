@@ -24,29 +24,10 @@ try {
   }
 }
 
-// Check if yt-dlp.exe is available
-const ytDlpPath = path.join(__dirname, '..', 'yt-dlp.exe')
-if (!fs.existsSync(ytDlpPath)) {
-  console.log('📦 Downloading yt-dlp.exe for native high-definition YouTube processing...')
-  try {
-    execSync('powershell -Command "Invoke-WebRequest -Uri https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe -OutFile yt-dlp.exe"', { stdio: 'inherit' })
-  } catch (err) {
-    console.warn('⚠️ Could not download yt-dlp.exe:', err.message)
-  }
-}
-
 console.log('\n🔨 Packaging Windows Standalone Setup Executable...')
 try {
-  const extraResources = [
-    'node_modules/ffmpeg-static/ffmpeg.exe',
-    'yt-dlp.exe',
-  ].filter(f => fs.existsSync(f)).join(',')
-
-  const extraArg = extraResources ? `-c.extraResources=${extraResources}` : ''
-  console.log(`📦 Bundling native media engines: ${extraResources || 'default'}`)
-
-  execSync(`npx electron-builder --win --x64 -c.asar=false -c.extraMetadata.main=electron-main.js ${extraArg}`, { stdio: 'inherit' })
-  console.log('\n🎉 SUCCESS! Windows Standalone Executable created inside the `dist/` directory!')
+  execSync(`npx electron-builder --win --x64 -c.extraMetadata.main=electron-main.js`, { stdio: 'inherit' })
+  console.log('\n🎉 SUCCESS! Windows Setup file created inside the `dist/` directory!')
 
   const distDir = path.join(__dirname, '..', 'dist')
   if (fs.existsSync(distDir)) {
