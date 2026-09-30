@@ -18,6 +18,7 @@ function createWindow() {
       contextIsolation: true,
       sandbox: false,
       webSecurity: false,
+      preload: path.join(__dirname, 'electron-preload.js'),
     },
   })
 
