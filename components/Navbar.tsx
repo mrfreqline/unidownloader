@@ -68,7 +68,12 @@ export default function Navbar({
     if (typeof window !== 'undefined') {
       if ((window as any).AndroidBridge || /A2ZDownloaderApp/i.test(navigator.userAgent)) {
         setPlatformName('APK')
-      } else if (/Windows/i.test(navigator.userAgent) && (window.matchMedia('(display-mode: standalone)').matches || window.location.search.includes('platform=windows'))) {
+      } else if (
+        (window as any).electronAPI?.isElectron ||
+        /Electron|A2ZDesktopApp/i.test(navigator.userAgent) ||
+        window.location.search.includes('platform=windows') ||
+        (/Windows/i.test(navigator.userAgent) && (window.matchMedia('(display-mode: standalone)').matches || (window as any).electronAPI))
+      ) {
         setPlatformName('Windows')
       } else {
         setPlatformName('Web')
@@ -110,7 +115,7 @@ export default function Navbar({
                 )}
                 {platformName === 'Windows' && (
                   <span className="px-1.5 py-0.2 rounded-full text-[9px] font-mono font-bold bg-blue-500/15 text-blue-400 border border-blue-500/30">
-                    PC
+                    PC / EXE
                   </span>
                 )}
                 {platformName === 'Web' && (

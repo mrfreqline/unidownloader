@@ -34,6 +34,7 @@ import {
   Plus,
   Edit3,
   FileText,
+  Camera,
 } from 'lucide-react'
 
 interface LayerItem {
@@ -864,11 +865,84 @@ export default function StudioEditorPage() {
         setExportStatusText('')
       }, 2500)
     } catch (err: any) {
-      console.error('[Video export error]:', err)
+      console.warn('[Server rendering failed, falling back to instant device hardware render]:', err)
+      setExportStatusText('Rendering with local hardware engine...')
+      try {
+        if (canvasRef.current) {
+          const canvas = canvasRef.current
+          const stream = (canvas as any).captureStream ? (canvas as any).captureStream(30) : null
+          
+          if (stream) {
+            let mime = 'video/webm'
+            if (typeof MediaRecorder !== 'undefined') {
+              if (MediaRecorder.isTypeSupported('video/mp4;codecs=avc1')) {
+                mime = 'video/mp4;codecs=avc1'
+              } else if (MediaRecorder.isTypeSupported('video/mp4')) {
+                mime = 'video/mp4'
+              }
+
+              const recorder = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 8000000 })
+              const chunks: Blob[] = []
+              recorder.ondataavailable = (e) => {
+                if (e.data && e.data.size > 0) chunks.push(e.data)
+              }
+              recorder.onstop = () => {
+                const blob = new Blob(chunks, { type: mime.includes('mp4') ? 'video/mp4' : 'video/webm' })
+                const blobUrl = URL.createObjectURL(blob)
+                const a = document.createElement('a')
+                a.href = blobUrl
+                a.download = finalFilename.replace('.mp4', mime.includes('mp4') ? '.mp4' : '.webm')
+                document.body.appendChild(a)
+                a.click()
+                document.body.removeChild(a)
+                setTimeout(() => URL.revokeObjectURL(blobUrl), 5000)
+                setExportProgress(100)
+                setExportStatusText('✅ Video Rendered & Saved Successfully!')
+                setTimeout(() => {
+                  setIsExporting(false)
+                  setExportProgress(0)
+                  setExportStatusText('')
+                }, 2500)
+              }
+
+              recorder.start()
+              const recordTimeMs = Math.min((clipDuration || duration || 10) * 1000, 60000)
+              setTimeout(() => {
+                if (recorder.state === 'recording') recorder.stop()
+              }, recordTimeMs)
+              return
+            }
+          }
+        }
+      } catch (recErr: any) {
+        console.error('[Client-side render error]:', recErr)
+      }
+
       setExportStatusText(`Export failed: ${err?.message || 'Error'}. Please try again.`)
       setTimeout(() => {
         setIsExporting(false)
       }, 3500)
+    }
+  }
+
+  // 1b. HIGH-RESOLUTION PHOTO / FRAME SNAPSHOT EXPORT
+  const handleExportSnapshot = () => {
+    if (!canvasRef.current) return
+    const canvas = canvasRef.current
+    try {
+      const dataUrl = canvas.toDataURL('image/png', 1.0)
+      const a = document.createElement('a')
+      a.href = dataUrl
+      const cleanTitle = (videoTitle || 'studio_snapshot').replace(/[^\w\s.-]/gi, '_')
+      a.download = `${cleanTitle}_${aspectRatio.replace(':', 'x')}_frame.png`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      setExportStatusText('📸 High-resolution photo frame saved successfully!')
+      setTimeout(() => setExportStatusText(''), 3000)
+    } catch (err: any) {
+      console.error('Snapshot error:', err)
+      setExportStatusText('Could not save snapshot frame.')
     }
   }
 
@@ -1074,6 +1148,16 @@ export default function StudioEditorPage() {
             >
               <RotateCcw className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">Reset</span>
+            </button>
+
+            {/* HIGH-RESOLUTION PHOTO / FRAME EXPORT BUTTON */}
+            <button
+              onClick={handleExportSnapshot}
+              className="px-3.5 py-2 rounded-xl text-xs font-semibold bg-zinc-100 dark:bg-[#171b21] hover:bg-zinc-200 dark:hover:bg-[#1e232b] text-zinc-800 dark:text-zinc-200 border border-zinc-200 dark:border-white/10 transition flex items-center gap-1.5 cursor-pointer shadow-xs"
+              title="Save current studio frame as high-resolution photo/image"
+            >
+              <Camera className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Save Photo</span>
             </button>
 
             {/* REAL VIDEO EXPORT BUTTON (Renders real MP4/WebM video file) */}

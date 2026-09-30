@@ -1,6 +1,13 @@
 // Electron Main Process for A2Z Downloader Windows Desktop App (.exe)
-const { app, BrowserWindow, shell, Menu } = require('electron')
+const { app, BrowserWindow, shell, Menu, ipcMain } = require('electron')
 const path = require('path')
+
+// IPC handler to open downloads in user's default browser (Chrome, Brave, Edge)
+ipcMain.on('open-external', (event, url) => {
+  if (url && (url.startsWith('http://') || url.startsWith('https://'))) {
+    shell.openExternal(url)
+  }
+})
 
 let mainWindow = null
 
@@ -45,8 +52,11 @@ function createWindow() {
 
   probeLocalhost.then(startUrl => {
     if (mainWindow && !mainWindow.isDestroyed()) {
-      console.log(`[A2Z Desktop] Loading interface from: ${startUrl}`)
-      mainWindow.loadURL(startUrl)
+      const urlWithParam = startUrl.includes('?') ? `${startUrl}&platform=windows` : `${startUrl}?platform=windows`
+      console.log(`[A2Z Desktop] Loading interface from: ${urlWithParam}`)
+      const customUA = (mainWindow.webContents.getUserAgent() || '') + ' A2ZDesktopApp/2.0.0 Electron'
+      mainWindow.webContents.setUserAgent(customUA)
+      mainWindow.loadURL(urlWithParam)
     }
   })
 
@@ -56,27 +66,14 @@ function createWindow() {
     return { action: 'deny' }
   })
 
-  // Native Windows Download Manager: downloads directly to user's Downloads folder
+  // Forward downloads directly to the user's default browser (Chrome / Brave / Edge)
+  // so the user gets Chrome/Brave's native download shelf, "Details" button, and download history tracking
   mainWindow.webContents.session.on('will-download', (event, item) => {
-    const defaultPath = path.join(app.getPath('downloads'), item.getFilename())
-    item.setSavePath(defaultPath)
-
-    item.on('updated', (event, state) => {
-      if (state === 'progressing' && item.getTotalBytes() > 0) {
-        if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.setProgressBar(item.getReceivedBytes() / item.getTotalBytes())
-        }
-      }
-    })
-
-    item.once('done', (event, state) => {
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.setProgressBar(-1) // Reset taskbar progress
-      }
-      if (state === 'completed') {
-        shell.showItemInFolder(item.getSavePath())
-      }
-    })
+    const downloadUrl = item.getURL()
+    if (downloadUrl && (downloadUrl.startsWith('http://') || downloadUrl.startsWith('https://'))) {
+      event.preventDefault()
+      shell.openExternal(downloadUrl)
+    }
   })
 
   mainWindow.on('closed', () => {

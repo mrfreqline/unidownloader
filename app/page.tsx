@@ -37,6 +37,7 @@ import {
   Compass,
   Monitor,
   Smartphone,
+  Download,
 } from 'lucide-react'
 
 const AD_SMARTLINK = 'https://www.profitableratecpmnetwork.com/gvwaq8hih?key=3a220d2a7e229bd864d3aac504d1e304'
@@ -65,6 +66,13 @@ export default function Home() {
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false)
   const [isAppModalOpen, setIsAppModalOpen] = useState(false)
   const [authReason, setAuthReason] = useState<'4k' | 'limit' | 'manual'>('manual')
+  const [pendingDownload, setPendingDownload] = useState<{
+    format: string
+    mediaType: 'video' | 'audio' | 'image'
+    enhancement: EnhancementSettings
+    downloadUrl?: string
+    customTitle?: string
+  } | null>(null)
 
   // Downloader input
   const [url, setUrl] = useState('')
@@ -465,7 +473,24 @@ export default function Home() {
     }
   }
 
-  const handleDownload = async (
+  const handleDownload = (
+    format: string,
+    mediaType: 'video' | 'audio' | 'image',
+    enhancement: EnhancementSettings,
+    downloadUrl?: string,
+    customTitle?: string
+  ) => {
+    // Show confirmation modal first ("Do you want to really download?")
+    setPendingDownload({
+      format,
+      mediaType,
+      enhancement,
+      downloadUrl,
+      customTitle,
+    })
+  }
+
+  const executeDownload = async (
     format: string,
     mediaType: 'video' | 'audio' | 'image',
     enhancement: EnhancementSettings,
@@ -554,6 +579,16 @@ export default function Home() {
         if (typeof window !== 'undefined' && (window as any).AndroidBridge?.download) {
           ;(window as any).AndroidBridge.download(downloadHref, filename, mimeType)
           setDownloadSuccessMsg(`Downloading ${filename} (Check notification bar)`)
+          setIsDownloading(false)
+          return
+        }
+
+        // Windows Desktop (.exe / Electron) integration:
+        // Forward download directly to user's default browser (Chrome, Brave, Edge)
+        // so the user gets Chrome/Brave's native download shelf, "Details" button, and download history tracking!
+        if (typeof window !== 'undefined' && (window as any).electronAPI?.openExternal) {
+          ;(window as any).electronAPI.openExternal(downloadHref)
+          setDownloadSuccessMsg(`Download sent to your browser (Chrome/Brave) for progress tracking!`)
           setIsDownloading(false)
           return
         }
@@ -1180,6 +1215,83 @@ export default function Home() {
         isOpen={isAppModalOpen}
         onClose={() => setIsAppModalOpen(false)}
       />
+
+      {/* Download Confirmation Modal ("Do you want to really download?") */}
+      {pendingDownload && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in-50 duration-200">
+          <div className="relative w-full max-w-md p-5 sm:p-6 rounded-2xl bg-zinc-900 border border-zinc-700/80 shadow-2xl space-y-4 text-left">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-lg font-bold border border-emerald-500/30">
+                  <Download className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white">Do you want to download?</h3>
+                  <p className="text-[11px] text-zinc-400">Confirm media extraction</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPendingDownload(null)}
+                className="text-zinc-400 hover:text-white p-1 rounded-lg hover:bg-zinc-800 transition cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-3.5 rounded-xl bg-zinc-950/80 border border-zinc-800 space-y-2 text-xs">
+              <p className="font-semibold text-zinc-100 line-clamp-2 leading-snug">
+                {pendingDownload.customTitle || analyzedMedia?.title || 'Selected Media'}
+              </p>
+              <div className="flex flex-wrap items-center gap-2 text-zinc-400 font-mono text-[11px]">
+                <span className="px-2 py-0.5 rounded-md bg-zinc-800 text-emerald-400 font-semibold border border-zinc-700">
+                  {pendingDownload.format}
+                </span>
+                <span className="px-2 py-0.5 rounded-md bg-zinc-800 text-zinc-300 uppercase">
+                  {pendingDownload.mediaType}
+                </span>
+                {analyzedMedia?.platform && (
+                  <span className="px-2 py-0.5 rounded-md bg-blue-500/15 text-blue-400 border border-blue-500/25">
+                    {analyzedMedia.platform}
+                  </span>
+                )}
+              </div>
+            </div>
+
+            <p className="text-xs text-zinc-400 leading-relaxed">
+              Your browser (Chrome / Brave) will process this download. You can track progress, check download speed, and view complete history via browser details.
+            </p>
+
+            <div className="flex items-center gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setPendingDownload(null)}
+                className="flex-1 py-2.5 px-4 rounded-xl border border-zinc-700 hover:bg-zinc-800 text-zinc-300 text-xs font-semibold transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const toExecute = pendingDownload
+                  setPendingDownload(null)
+                  executeDownload(
+                    toExecute.format,
+                    toExecute.mediaType,
+                    toExecute.enhancement,
+                    toExecute.downloadUrl,
+                    toExecute.customTitle
+                  )
+                }}
+                className="flex-1 py-2.5 px-4 rounded-xl bg-gradient-to-r from-emerald-500 via-teal-400 to-cyan-500 text-zinc-950 hover:brightness-105 active:scale-[0.98] text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-md shadow-emerald-500/20 cursor-pointer"
+              >
+                <Download className="w-4 h-4 stroke-[2.5]" />
+                <span>Yes, Download</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   )

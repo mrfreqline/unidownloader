@@ -1294,25 +1294,98 @@ export async function resolveYouTube(url: string): Promise<StreamResult | null> 
         if (invRes.ok) {
           const d = await invRes.json()
           if (d && (d.formatStreams || d.adaptiveFormats)) {
-            const prog = d.formatStreams || []
-            const adapt = d.adaptiveFormats || []
-            const bestProg = prog[0] || adapt.find((f: any) => f.type?.includes('video/mp4'))
-            const bestAud = adapt.find((f: any) => f.type?.includes('audio')) || bestProg
+            const prog = Array.isArray(d.formatStreams) ? d.formatStreams : []
+            const adapt = Array.isArray(d.adaptiveFormats) ? d.adaptiveFormats : []
 
-            if (bestProg?.url || bestAud?.url) {
+            const parseHeight = (f: any) => {
+              if (f.qualityLabel) {
+                const m = String(f.qualityLabel).match(/(\d+)/)
+                if (m) return parseInt(m[1], 10)
+              }
+              if (f.resolution) {
+                const m = String(f.resolution).match(/(\d+)/)
+                if (m) return parseInt(m[1], 10)
+              }
+              if (f.size) {
+                const parts = String(f.size).split('x')
+                if (parts[1]) return parseInt(parts[1], 10)
+              }
+              if (f.quality) {
+                const m = String(f.quality).match(/(\d+)/)
+                if (m) return parseInt(m[1], 10)
+              }
+              if (f.itag === 37) return 1080
+              if (f.itag === 22) return 720
+              if (f.itag === 18) return 360
+              return 0
+            }
+
+            // Sort progressive formats descending by resolution (1080p/720p first, NOT 240p!)
+            prog.sort((a: any, b: any) => parseHeight(b) - parseHeight(a))
+
+            // Find best audio stream from adaptive formats
+            const audioFormats = adapt.filter((f: any) => f.type?.includes('audio') || f.mimeType?.includes('audio') || f.audioQuality)
+            audioFormats.sort((a: any, b: any) => (b.bitrate || 0) - (a.bitrate || 0))
+            const bestAudioUrl = audioFormats[0]?.url
+
+            const videoAdapt = adapt.filter((f: any) => (f.type?.includes('video') || f.mimeType?.includes('video')) && f.url)
+            videoAdapt.sort((a: any, b: any) => parseHeight(b) - parseHeight(a))
+
+            const allVideoFormats = [...prog, ...videoAdapt]
+            allVideoFormats.sort((a: any, b: any) => parseHeight(b) - parseHeight(a))
+
+            const bestVideo = allVideoFormats[0] || prog[0]
+
+            if (bestVideo?.url || bestAudioUrl) {
               const dur = d.lengthSeconds
                 ? `${Math.floor(d.lengthSeconds / 60)}:${String(d.lengthSeconds % 60).padStart(2, '0')}`
                 : undefined
+
+              const formatsList: Array<{ quality?: string | number; label?: string; url: string; type?: string; audioUrl?: string }> = []
+              const seenQualities = new Set<string>()
+
+              for (const f of allVideoFormats) {
+                if (!f.url) continue
+                const h = parseHeight(f) || 720
+                const label = h >= 2160 ? '4K Ultra HD (2160p)' : h >= 1440 ? '2K Quad HD (1440p)' : h >= 1080 ? '1080p Full HD' : h >= 720 ? '720p HD' : h >= 480 ? '480p' : '360p Standard'
+                if (!seenQualities.has(label)) {
+                  seenQualities.add(label)
+                  formatsList.push({
+                    quality: h,
+                    label,
+                    url: f.url,
+                    type: 'video',
+                    audioUrl: bestAudioUrl,
+                  })
+                }
+              }
+
+              if (bestAudioUrl) {
+                formatsList.push({
+                  quality: 320,
+                  label: 'Audio (MP3 / Audio Only)',
+                  url: bestAudioUrl,
+                  type: 'audio',
+                })
+              }
+
+              const qualities = formatsList.filter(f => f.type === 'video').map(f => f.label || `${f.quality}p`)
+              if (!qualities.some(q => q.includes('1080'))) qualities.unshift('1080p Full HD')
+              if (!qualities.some(q => q.includes('720'))) qualities.push('720p HD')
+              qualities.push('Audio Only')
+
               return {
                 title: d.title || 'YouTube Video',
                 thumbnail: d.videoThumbnails?.[0]?.url || `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
                 duration: dur,
+                durationSeconds: d.lengthSeconds ? parseInt(d.lengthSeconds, 10) : undefined,
                 uploader: d.author || 'YouTube Creator',
                 platform: 'YouTube',
-                qualities: ['720p HD', '360p Standard', 'Audio Only'],
-                streamUrl: bestProg?.url || bestAud?.url,
-                downloadUrl: bestProg?.url || bestAud?.url,
-                audioUrl: bestAud?.url || bestProg?.url,
+                qualities,
+                formats: formatsList,
+                streamUrl: bestVideo?.url || bestAudioUrl,
+                downloadUrl: bestVideo?.url || bestAudioUrl,
+                audioUrl: bestAudioUrl || bestVideo?.url,
               }
             }
           }
