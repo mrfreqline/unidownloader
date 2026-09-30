@@ -474,6 +474,46 @@ export default function Home() {
     setAnalyzedMedia(null)
     setFolderData(null)
 
+    // Fast-path: Desktop App Native Engine (yt-dlp with Node JS runtime)
+    if (typeof window !== 'undefined' && (window as any).electronAPI?.analyzeMedia) {
+      try {
+        const nativeRes = await (window as any).electronAPI.analyzeMedia(trimmed)
+        if (nativeRes?.success && nativeRes.data) {
+          const data = nativeRes.data
+          let totalSecs = data.durationSeconds
+          if (!totalSecs && data.duration) {
+            const parts = String(data.duration).split(':').map(Number)
+            if (parts.length === 2 && !parts.some(isNaN)) totalSecs = parts[0] * 60 + parts[1]
+            else if (parts.length === 3 && !parts.some(isNaN)) totalSecs = parts[0] * 3600 + parts[1] * 60 + parts[2]
+          }
+
+          setAnalyzedMedia({
+            title: data.title || 'Extracted Media Stream',
+            thumbnail: data.thumbnail || '',
+            duration: data.duration,
+            durationSeconds: totalSecs && totalSecs > 0 ? totalSecs : 600,
+            uploader: data.uploader || 'Creator',
+            platform: data.platform || 'Direct Media',
+            originalUrl: trimmed,
+            qualities: data.qualities || ['1080p Full HD', '720p HD', 'Audio Only'],
+            isDirectFile: false,
+            fileType: data.fileType || 'video',
+            streamUrl: data.streamUrl,
+            downloadUrl: data.downloadUrl,
+            audioUrl: data.audioUrl,
+            isDirectMovie: false,
+            fileSize: data.fileSize,
+            formats: data.formats,
+            images: data.images,
+          })
+          setIsAnalyzing(false)
+          return
+        }
+      } catch (err) {
+        console.warn('[Desktop native analyze fallback to web]:', err)
+      }
+    }
+
     try {
       const res = await fetch('/api/analyze', {
         method: 'POST',

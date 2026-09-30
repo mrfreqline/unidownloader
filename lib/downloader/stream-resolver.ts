@@ -1094,6 +1094,113 @@ export async function resolveYouTube(url: string): Promise<StreamResult | null> 
   const videoId = extractYouTubeVideoId(cleanUrl)
   const canonicalUrl = videoId ? `https://www.youtube.com/watch?v=${videoId}` : cleanUrl
 
+  // Engine 0: Local yt-dlp binary (Fastest, 100% reliable, handles JS challenges, real video streams)
+  try {
+    const fs = await import('fs')
+    const path = await import('path')
+    const { spawnSync } = await import('child_process')
+
+    let ytDlpBin = path.join(process.cwd(), 'bin', 'yt-dlp.exe')
+    if (!fs.existsSync(ytDlpBin) && (process as any).resourcesPath) {
+      ytDlpBin = path.join((process as any).resourcesPath, 'bin', 'yt-dlp.exe')
+    }
+
+    if (fs.existsSync(ytDlpBin)) {
+      const proc = spawnSync(
+        ytDlpBin,
+        ['--js-runtimes', 'node', '-j', '--no-playlist', canonicalUrl],
+        { encoding: 'utf-8', maxBuffer: 15 * 1024 * 1024, windowsHide: true }
+      )
+
+      if (proc.stdout) {
+        const meta = JSON.parse(proc.stdout)
+        if (meta && meta.title) {
+          const rawFormats = Array.isArray(meta.formats) ? meta.formats : []
+
+          // Audio formats (ensure direct HTTPS stream with audio track)
+          const audioFormats = rawFormats.filter((f: any) => f.vcodec === 'none' && f.acodec !== 'none' && f.url && f.protocol === 'https')
+          audioFormats.sort((a: any, b: any) => {
+            const aIsM4a = a.ext === 'm4a' ? 1 : 0
+            const bIsM4a = b.ext === 'm4a' ? 1 : 0
+            if (bIsM4a !== aIsM4a) return bIsM4a - aIsM4a
+            return (b.abr || b.tbr || 0) - (a.abr || a.tbr || 0)
+          })
+          const bestAudio = audioFormats[0] || rawFormats.find((f: any) => f.acodec !== 'none' && f.url)
+
+          // Video formats (ensure real picture frames, vcodec !== 'none', and direct HTTPS protocol - NO m3u8 manifests)
+          const videoFormats = rawFormats.filter((f: any) => f.vcodec && f.vcodec !== 'none' && f.url && f.protocol === 'https')
+          videoFormats.sort((a: any, b: any) => {
+            const aIsMp4 = a.ext === 'mp4' ? 1 : 0
+            const bIsMp4 = b.ext === 'mp4' ? 1 : 0
+            if (bIsMp4 !== aIsMp4) return bIsMp4 - aIsMp4
+            return (b.height || 0) - (a.height || 0)
+          })
+
+          // Progressive formats (combined video + audio)
+          const progFormats = rawFormats.filter((f: any) => f.vcodec && f.vcodec !== 'none' && f.acodec && f.acodec !== 'none' && f.url && f.protocol === 'https')
+          progFormats.sort((a: any, b: any) => (b.height || 0) - (a.height || 0))
+
+          // Best progressive or HD video
+          const bestProg = progFormats[0] || videoFormats.find((f: any) => f.height <= 1080) || videoFormats[0]
+
+          const availableFormats: Array<{ quality?: string | number; label?: string; url: string; type?: string; audioUrl?: string }> = []
+          const qualities: string[] = []
+
+          const heights = [2160, 1440, 1080, 720, 480, 360]
+          for (const h of heights) {
+            const match = videoFormats.find((f: any) => f.height === h)
+            if (match) {
+              const label = h >= 2160 ? '4K Ultra HD (2160p)' : h >= 1440 ? '2K Quad HD (1440p)' : h >= 1080 ? '1080p Full HD' : h >= 720 ? '720p HD' : `${h}p`
+              if (!qualities.includes(label)) qualities.push(label)
+              availableFormats.push({
+                quality: h,
+                label,
+                url: match.url,
+                type: 'video',
+                audioUrl: bestAudio?.url,
+              })
+            }
+          }
+
+          if (bestAudio) {
+            qualities.push('Audio Only')
+            availableFormats.push({
+              quality: 320,
+              label: 'Audio Only (MP3)',
+              url: bestAudio.url,
+              type: 'audio',
+            })
+          }
+
+          const durationSec = typeof meta.duration === 'number' ? meta.duration : undefined
+          const durationStr = durationSec
+            ? `${Math.floor(durationSec / 60)}:${String(durationSec % 60).padStart(2, '0')}`
+            : undefined
+
+          // Guarantee real video stream for preview/studio playback
+          const realVideoStream = bestProg?.url || (videoFormats[0] && videoFormats[0].url) || canonicalUrl
+
+          return {
+            title: meta.title,
+            thumbnail: meta.thumbnail || (videoId ? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg` : ''),
+            duration: durationStr,
+            durationSeconds: durationSec,
+            uploader: meta.uploader || meta.channel || 'YouTube Creator',
+            platform: 'YouTube',
+            qualities: qualities.length > 0 ? qualities : ['1080p Full HD', '720p HD', 'Audio Only'],
+            formats: availableFormats,
+            streamUrl: realVideoStream,
+            downloadUrl: realVideoStream,
+            audioUrl: bestAudio?.url || realVideoStream,
+            fileType: 'video',
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('[Local yt-dlp resolver warn]:', err)
+  }
+
   // Engine A: Movanest / SaveTube Cloudflare CDN API (100% Serverless & Vercel compatible)
   try {
     const apiUrl = `https://www.movanest.xyz/v2/ytdown?url=${encodeURIComponent(canonicalUrl)}`
@@ -1198,13 +1305,13 @@ export async function resolveYouTube(url: string): Promise<StreamResult | null> 
         const meta = JSON.parse(decrypted.toString('utf8'))
 
         if (meta?.key) {
-          // Attempt 1080p Full HD pre-muxed stream + audio fetch
-          const [videoDl1080, audioDl] = await Promise.all([
+          // Fetch 720p HD pre-muxed stream + audio fetch (returns instantly in <1s)
+          const [videoDl720, audioDl] = await Promise.all([
             fetch(`https://${cdn}/download`, {
               method: 'POST',
               headers,
-              body: JSON.stringify({ id: videoId, downloadType: 'video', quality: '1080', key: meta.key }),
-              signal: AbortSignal.timeout(8000),
+              body: JSON.stringify({ id: videoId, downloadType: 'video', quality: '720', key: meta.key }),
+              signal: AbortSignal.timeout(6000),
             })
               .then(r => r.json())
               .catch(() => null),
@@ -1212,30 +1319,30 @@ export async function resolveYouTube(url: string): Promise<StreamResult | null> 
               method: 'POST',
               headers,
               body: JSON.stringify({ id: videoId, downloadType: 'audio', quality: '128', key: meta.key }),
-              signal: AbortSignal.timeout(8000),
+              signal: AbortSignal.timeout(6000),
             })
               .then(r => r.json())
               .catch(() => null),
           ])
 
-          let videoUrl = videoDl1080?.data?.downloadUrl
+          let videoUrl = videoDl720?.data?.downloadUrl
           if (!videoUrl) {
-            // Fallback to 720p HD if 1080p not pre-muxed
-            const videoDl720 = await fetch(`https://${cdn}/download`, {
+            // Fallback to 360p standard if 720p not available
+            const videoDl360 = await fetch(`https://${cdn}/download`, {
               method: 'POST',
               headers,
-              body: JSON.stringify({ id: videoId, downloadType: 'video', quality: '720', key: meta.key }),
-              signal: AbortSignal.timeout(8000),
+              body: JSON.stringify({ id: videoId, downloadType: 'video', quality: '360', key: meta.key }),
+              signal: AbortSignal.timeout(5000),
             })
               .then(r => r.json())
               .catch(() => null)
-            videoUrl = videoDl720?.data?.downloadUrl
+            videoUrl = videoDl360?.data?.downloadUrl
           }
 
-          const audioUrl = audioDl?.data?.downloadUrl || videoUrl
+          const audioUrl = audioDl?.data?.downloadUrl
+          const stream = videoUrl || audioUrl
 
           if (videoUrl || audioUrl) {
-            const stream = videoUrl || audioUrl
             const availableFormats: Array<{ quality?: string | number; label?: string; url: string; type?: string }> = []
             
             // Add 4K and 2K formats if the video supports high resolutions

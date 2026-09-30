@@ -24,6 +24,114 @@ function getBinPath(binName) {
 // Active background processes map (downloadId -> child_process)
 const activeProcesses = new Map()
 
+// 0. Native Fast URL Extraction & Metadata Analysis (yt-dlp with Node JS runtime)
+ipcMain.handle('native-analyze-media', async (event, targetUrl) => {
+  const ytDlpPath = getBinPath('yt-dlp.exe')
+  if (!fs.existsSync(ytDlpPath)) {
+    return { success: false, error: 'Local extraction engine (yt-dlp) not found.' }
+  }
+
+  return new Promise((resolve) => {
+    const args = ['--js-runtimes', 'node', '-j', '--no-playlist', targetUrl]
+    const proc = spawn(ytDlpPath, args, { windowsHide: true })
+    let stdoutData = ''
+    let stderrData = ''
+
+    proc.stdout.on('data', chunk => { stdoutData += chunk.toString() })
+    proc.stderr.on('data', chunk => { stderrData += chunk.toString() })
+
+    proc.on('close', (code) => {
+      if (code === 0 && stdoutData) {
+        try {
+          const meta = JSON.parse(stdoutData)
+          const rawFormats = Array.isArray(meta.formats) ? meta.formats : []
+
+          const audioFormats = rawFormats.filter((f) => f.vcodec === 'none' && f.acodec !== 'none' && f.url && f.protocol === 'https')
+          audioFormats.sort((a, b) => {
+            const aIsM4a = a.ext === 'm4a' ? 1 : 0
+            const bIsM4a = b.ext === 'm4a' ? 1 : 0
+            if (bIsM4a !== aIsM4a) return bIsM4a - aIsM4a
+            return (b.abr || b.tbr || 0) - (a.abr || a.tbr || 0)
+          })
+          const bestAudio = audioFormats[0] || rawFormats.find((f) => f.acodec !== 'none' && f.url)
+
+          const videoFormats = rawFormats.filter((f) => f.vcodec && f.vcodec !== 'none' && f.url && f.protocol === 'https')
+          videoFormats.sort((a, b) => {
+            const aIsMp4 = a.ext === 'mp4' ? 1 : 0
+            const bIsMp4 = b.ext === 'mp4' ? 1 : 0
+            if (bIsMp4 !== aIsMp4) return bIsMp4 - aIsMp4
+            return (b.height || 0) - (a.height || 0)
+          })
+
+          const progFormats = rawFormats.filter((f) => f.vcodec && f.vcodec !== 'none' && f.acodec && f.acodec !== 'none' && f.url && f.protocol === 'https')
+          progFormats.sort((a, b) => (b.height || 0) - (a.height || 0))
+
+          const bestProg = progFormats[0] || videoFormats.find((f) => f.height <= 1080) || videoFormats[0]
+
+          const availableFormats = []
+          const qualities = []
+
+          const heights = [2160, 1440, 1080, 720, 480, 360]
+          for (const h of heights) {
+            const match = videoFormats.find((f) => f.height === h)
+            if (match) {
+              const label = h >= 2160 ? '4K Ultra HD (2160p)' : h >= 1440 ? '2K Quad HD (1440p)' : h >= 1080 ? '1080p Full HD' : h >= 720 ? '720p HD' : `${h}p`
+              if (!qualities.includes(label)) qualities.push(label)
+              availableFormats.push({
+                quality: h,
+                label,
+                url: match.url,
+                type: 'video',
+                audioUrl: bestAudio?.url,
+              })
+            }
+          }
+
+          if (bestAudio) {
+            qualities.push('Audio Only')
+            availableFormats.push({
+              quality: 320,
+              label: 'Audio Only (MP3)',
+              url: bestAudio.url,
+              type: 'audio',
+            })
+          }
+
+          const durationSec = typeof meta.duration === 'number' ? meta.duration : undefined
+          const durationStr = durationSec
+            ? `${Math.floor(durationSec / 60)}:${String(durationSec % 60).padStart(2, '0')}`
+            : undefined
+
+          const realVideoStream = bestProg?.url || (videoFormats[0] && videoFormats[0].url) || targetUrl
+
+          resolve({
+            success: true,
+            data: {
+              title: meta.title,
+              thumbnail: meta.thumbnail || '',
+              duration: durationStr,
+              durationSeconds: durationSec,
+              uploader: meta.uploader || meta.channel || 'Creator',
+              platform: meta.extractor_key || 'Direct Media',
+              qualities: qualities.length > 0 ? qualities : ['1080p Full HD', '720p HD', 'Audio Only'],
+              formats: availableFormats,
+              streamUrl: realVideoStream,
+              downloadUrl: realVideoStream,
+              audioUrl: bestAudio?.url || realVideoStream,
+              fileType: 'video',
+              originalUrl: targetUrl,
+            }
+          })
+        } catch (e) {
+          resolve({ success: false, error: e.message })
+        }
+      } else {
+        resolve({ success: false, error: stderrData || `yt-dlp exited with code ${code}` })
+      }
+    })
+  })
+})
+
 // 1. Check Native Engine status
 ipcMain.handle('native-engine-status', async () => {
   const ytDlpPath = getBinPath('yt-dlp.exe')

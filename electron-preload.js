@@ -8,6 +8,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Native Engine APIs (yt-dlp + ffmpeg)
   getEngineStatus: () => ipcRenderer.invoke('native-engine-status'),
+  analyzeMedia: (url) => ipcRenderer.invoke('native-analyze-media', url),
   startNativeDownload: (opts) => ipcRenderer.invoke('native-download-start', opts),
   cancelNativeDownload: (id) => ipcRenderer.invoke('native-download-cancel', id),
   openFolder: (filePath) => ipcRenderer.invoke('native-open-folder', filePath),

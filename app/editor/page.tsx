@@ -174,9 +174,13 @@ export default function StudioEditorPage() {
         setTargetQuality(rawQuality)
       }
 
+      const isDesktopApp = typeof window !== 'undefined' && !!(window as any).electronAPI?.isElectron
+
       if (rawAudio) {
         const decodedAudio = decodeURIComponent(rawAudio)
-        if (decodedAudio.startsWith('http') && !decodedAudio.includes('/api/stream-proxy')) {
+        if (isDesktopApp || decodedAudio.includes('googlevideo.com') || decodedAudio.includes('.m4a') || decodedAudio.includes('.mp3')) {
+          setAudioSrc(decodedAudio)
+        } else if (decodedAudio.startsWith('http') && !decodedAudio.includes('/api/stream-proxy')) {
           setAudioSrc(`/api/stream-proxy?url=${encodeURIComponent(decodedAudio)}&quality=audio`)
         } else {
           setAudioSrc(decodedAudio)
@@ -198,8 +202,10 @@ export default function StudioEditorPage() {
 
       if (rawSrc) {
         const decodedSrc = decodeURIComponent(rawSrc)
-        if (decodedSrc.startsWith('http') && !decodedSrc.includes('/api/stream-proxy')) {
-          setVideoSrc(`/api/stream-proxy?url=${encodeURIComponent(decodedSrc)}&quality=${encodeURIComponent(rawQuality)}`)
+        if (isDesktopApp || decodedSrc.includes('googlevideo.com') || decodedSrc.includes('.mp4') || decodedSrc.includes('.webm')) {
+          setVideoSrc(decodedSrc)
+        } else if (decodedSrc.startsWith('http') && !decodedSrc.includes('/api/stream-proxy')) {
+          setVideoSrc(`/api/stream-proxy?url=${encodeURIComponent(decodedSrc)}&quality=${encodeURIComponent(rawQuality || '720')}`)
         } else {
           setVideoSrc(decodedSrc)
         }
@@ -512,7 +518,10 @@ export default function StudioEditorPage() {
       const videoLayer = layers.find(l => l.id === 'layer-video')
       const showVideo = videoLayer?.visible !== false
 
-      if (video && video.readyState >= 2 && showVideo) {
+      // Check if video element has active visual frames
+      const hasVideoFrames = video && showVideo && (video.readyState >= 1 || video.currentTime > 0) && (video.videoWidth > 0)
+
+      if (hasVideoFrames) {
         // PASS 1: Blurred stretched background padding for 9:16 vertical shorts
         if (blurPadding) {
           ctx.save()
@@ -549,178 +558,202 @@ export default function StudioEditorPage() {
         ctx.globalAlpha = (videoLayer?.opacity ?? 100) / 100
         ctx.drawImage(video, renderX, renderY, renderW, renderH)
         ctx.restore()
+      } else {
+        // Fallback / Loading / Audio-only background
+        ctx.fillStyle = '#0f1318'
+        ctx.fillRect(0, 0, targetWidth, targetHeight)
 
-        // PASS 3: Dynamic CapCut Kinetic Subtitles Layer with multi-style engine
-        const subLayer = layers.find(l => l.id === 'layer-subtitles')
-        if (autoCaptionEnabled && subLayer?.visible !== false) {
-          const active = getActiveCaption(currentTime)
-          if (active && (active.text || active.word)) {
+        if (videoSrc) {
+          if (video && video.videoWidth === 0 && (video.readyState >= 1 || video.currentTime > 0)) {
+            // Audio-only track playing
             ctx.save()
-            const textToRender = (active.text || active.word || '').toUpperCase()
+            const grad = ctx.createRadialGradient(targetWidth / 2, targetHeight / 2, 20, targetWidth / 2, targetHeight / 2, targetWidth * 0.45)
+            grad.addColorStop(0, 'rgba(16, 185, 129, 0.18)')
+            grad.addColorStop(1, 'rgba(15, 19, 24, 0.95)')
+            ctx.fillStyle = grad
+            ctx.fillRect(0, 0, targetWidth, targetHeight)
 
-            let textY = targetHeight * 0.78
-            if (subtitlePosition === 'center') textY = targetHeight * 0.5
-            if (subtitlePosition === 'top') textY = targetHeight * 0.22
+            ctx.fillStyle = '#10b981'
+            ctx.font = 'bold 36px Montserrat, sans-serif'
+            ctx.textAlign = 'center'
+            ctx.fillText('🎵 Studio Audio Track', targetWidth / 2, targetHeight / 2 - 25)
 
-            if (subtitleStyle === 'hormozi') {
-              // Alex Hormozi Pop-In: Vibrant yellow bold text with thick black border on dark rounded pill
-              ctx.font = '900 52px Montserrat, Arial Black, sans-serif'
-              ctx.textAlign = 'center'
-              ctx.textBaseline = 'middle'
-
-              const metrics = ctx.measureText(textToRender)
-              const padX = 32
-              const padY = 16
-
-              ctx.fillStyle = 'rgba(0, 0, 0, 0.88)'
-              ctx.beginPath()
-              ctx.roundRect(
-                targetWidth / 2 - metrics.width / 2 - padX,
-                textY - 32 - padY,
-                metrics.width + padX * 2,
-                64 + padY * 2,
-                20
-              )
-              ctx.fill()
-
-              ctx.strokeStyle = '#000000'
-              ctx.lineWidth = 10
-              ctx.lineJoin = 'round'
-              ctx.strokeText(textToRender, targetWidth / 2, textY)
-
-              ctx.fillStyle = '#facc15'
-              ctx.shadowColor = 'rgba(250, 204, 21, 0.7)'
-              ctx.shadowBlur = 14
-              ctx.fillText(textToRender, targetWidth / 2, textY)
-            } else if (subtitleStyle === 'tiktok') {
-              // TikTok Viral: Crisp white bold font with heavy black stroke
-              ctx.font = '900 50px Montserrat, Inter, sans-serif'
-              ctx.textAlign = 'center'
-              ctx.textBaseline = 'middle'
-
-              ctx.strokeStyle = '#000000'
-              ctx.lineWidth = 12
-              ctx.lineJoin = 'round'
-              ctx.strokeText(textToRender, targetWidth / 2, textY)
-
-              ctx.fillStyle = '#ffffff'
-              ctx.shadowColor = 'rgba(239, 68, 68, 0.7)'
-              ctx.shadowBlur = 10
-              ctx.fillText(textToRender, targetWidth / 2, textY)
-            } else if (subtitleStyle === 'neon') {
-              // Cyberpunk Neon Glow: Cyan text with glowing outline
-              ctx.font = '900 48px Inter, sans-serif'
-              ctx.textAlign = 'center'
-              ctx.textBaseline = 'middle'
-
-              const metrics = ctx.measureText(textToRender)
-              ctx.fillStyle = 'rgba(10, 15, 25, 0.85)'
-              ctx.strokeStyle = '#22d3ee'
-              ctx.lineWidth = 3
-              ctx.beginPath()
-              ctx.roundRect(
-                targetWidth / 2 - metrics.width / 2 - 28,
-                textY - 28 - 12,
-                metrics.width + 56,
-                56 + 24,
-                16
-              )
-              ctx.fill()
-              ctx.stroke()
-
-              ctx.fillStyle = '#22d3ee'
-              ctx.shadowColor = 'rgba(34, 211, 238, 0.9)'
-              ctx.shadowBlur = 24
-              ctx.fillText(textToRender, targetWidth / 2, textY)
-            } else if (subtitleStyle === 'bold_red') {
-              // Crimson Impact: Punchy red with white contrast outline
-              ctx.font = '900 52px Montserrat, Arial Black, sans-serif'
-              ctx.textAlign = 'center'
-              ctx.textBaseline = 'middle'
-
-              ctx.strokeStyle = '#ffffff'
-              ctx.lineWidth = 8
-              ctx.lineJoin = 'round'
-              ctx.strokeText(textToRender, targetWidth / 2, textY)
-
-              ctx.fillStyle = '#ef4444'
-              ctx.shadowColor = 'rgba(0, 0, 0, 0.8)'
-              ctx.shadowBlur = 10
-              ctx.fillText(textToRender, targetWidth / 2, textY)
-            } else {
-              // Clean Minimal: Elegant white text on translucent dark badge
-              ctx.font = '700 42px Inter, sans-serif'
-              ctx.textAlign = 'center'
-              ctx.textBaseline = 'middle'
-
-              const metrics = ctx.measureText(textToRender)
-              ctx.fillStyle = 'rgba(0, 0, 0, 0.7)'
-              ctx.beginPath()
-              ctx.roundRect(
-                targetWidth / 2 - metrics.width / 2 - 24,
-                textY - 24 - 10,
-                metrics.width + 48,
-                48 + 20,
-                24
-              )
-              ctx.fill()
-
-              ctx.fillStyle = '#ffffff'
-              ctx.fillText(textToRender, targetWidth / 2, textY)
-            }
-
+            ctx.fillStyle = '#94a3b8'
+            ctx.font = '22px sans-serif'
+            ctx.fillText(videoTitle || 'Audio Playing in Studio', targetWidth / 2, targetHeight / 2 + 25)
             ctx.restore()
+          } else {
+            ctx.fillStyle = '#94a3b8'
+            ctx.font = '24px sans-serif'
+            ctx.textAlign = 'center'
+            ctx.fillText('⏳ Buffering video stream...', targetWidth / 2, targetHeight / 2)
           }
-        }
-
-        // PASS 4: Headline Banner Text Layer
-        const titleLayer = layers.find(l => l.id === 'layer-title')
-        if (captionText && titleLayer?.visible !== false) {
-          ctx.save()
-          ctx.font = `bold ${fontSize * 1.8}px Inter, sans-serif`
+        } else {
+          ctx.fillStyle = '#64748b'
+          ctx.font = '24px sans-serif'
           ctx.textAlign = 'center'
-          ctx.fillStyle = captionColor
+          ctx.fillText('Import video or photo to preview', targetWidth / 2, targetHeight / 2)
+        }
+      }
 
-          let textY = targetHeight * 0.15
-          if (captionPosition === 'center') textY = targetHeight * 0.5
-          if (captionPosition === 'bottom') textY = targetHeight * 0.85
+      // PASS 3: Dynamic CapCut Kinetic Subtitles Layer with multi-style engine
+      const subLayer = layers.find(l => l.id === 'layer-subtitles')
+      if (autoCaptionEnabled && subLayer?.visible !== false) {
+        const active = getActiveCaption(currentTime)
+        if (active && (active.text || active.word)) {
+          ctx.save()
+          const textToRender = (active.text || active.word || '').toUpperCase()
 
-          const textWidth = ctx.measureText(captionText).width
-          const padding = 20
+          let textY = targetHeight * 0.78
+          if (subtitlePosition === 'center') textY = targetHeight * 0.5
+          if (subtitlePosition === 'top') textY = targetHeight * 0.22
 
-          // Caption background badge
-          if (captionBg) {
-            ctx.fillStyle = 'rgba(0, 0, 0, 0.75)'
+          if (subtitleStyle === 'hormozi') {
+            // Alex Hormozi Pop-In: Vibrant yellow bold text with thick black border on dark rounded pill
+            ctx.font = '900 52px Montserrat, Arial Black, sans-serif'
+            ctx.textAlign = 'center'
+            ctx.textBaseline = 'middle'
+
+            const metrics = ctx.measureText(textToRender)
+            const padX = 32
+            const padY = 16
+
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.88)'
             ctx.beginPath()
             ctx.roundRect(
-              targetWidth / 2 - textWidth / 2 - padding,
-              textY - (fontSize * 1.8) / 2 - 10,
-              textWidth + padding * 2,
-              fontSize * 1.8 + 20,
+              targetWidth / 2 - metrics.width / 2 - padX,
+              textY - 32 - padY,
+              metrics.width + padX * 2,
+              64 + padY * 2,
+              20
+            )
+            ctx.fill()
+
+            ctx.strokeStyle = '#000000'
+            ctx.lineWidth = 10
+            ctx.lineJoin = 'round'
+            ctx.strokeText(textToRender, targetWidth / 2, textY)
+
+            ctx.fillStyle = '#facc15'
+            ctx.shadowColor = 'rgba(250, 204, 21, 0.7)'
+            ctx.shadowBlur = 14
+            ctx.fillText(textToRender, targetWidth / 2, textY)
+          } else if (subtitleStyle === 'tiktok') {
+            // TikTok Viral: Crisp white bold font with heavy black stroke
+            ctx.font = '900 50px Montserrat, Inter, sans-serif'
+            ctx.textAlign = 'center'
+            ctx.textBaseline = 'middle'
+
+            ctx.strokeStyle = '#000000'
+            ctx.lineWidth = 12
+            ctx.lineJoin = 'round'
+            ctx.strokeText(textToRender, targetWidth / 2, textY)
+
+            ctx.fillStyle = '#ffffff'
+            ctx.shadowColor = 'rgba(239, 68, 68, 0.7)'
+            ctx.shadowBlur = 10
+            ctx.fillText(textToRender, targetWidth / 2, textY)
+          } else if (subtitleStyle === 'neon') {
+            // Cyberpunk Neon Glow: Cyan text with glowing outline
+            ctx.font = '900 48px Inter, sans-serif'
+            ctx.textAlign = 'center'
+            ctx.textBaseline = 'middle'
+
+            const metrics = ctx.measureText(textToRender)
+            ctx.fillStyle = 'rgba(10, 15, 25, 0.85)'
+            ctx.strokeStyle = '#22d3ee'
+            ctx.lineWidth = 3
+            ctx.beginPath()
+            ctx.roundRect(
+              targetWidth / 2 - metrics.width / 2 - 28,
+              textY - 28 - 12,
+              metrics.width + 56,
+              56 + 24,
               16
             )
             ctx.fill()
+            ctx.stroke()
+
+            ctx.fillStyle = '#22d3ee'
+            ctx.shadowColor = 'rgba(34, 211, 238, 0.9)'
+            ctx.shadowBlur = 24
+            ctx.fillText(textToRender, targetWidth / 2, textY)
+          } else if (subtitleStyle === 'bold_red') {
+            // Crimson Impact: Punchy red with white contrast outline
+            ctx.font = '900 52px Montserrat, Arial Black, sans-serif'
+            ctx.textAlign = 'center'
+            ctx.textBaseline = 'middle'
+
+            ctx.strokeStyle = '#ffffff'
+            ctx.lineWidth = 8
+            ctx.lineJoin = 'round'
+            ctx.strokeText(textToRender, targetWidth / 2, textY)
+
+            ctx.fillStyle = '#ef4444'
+            ctx.shadowColor = 'rgba(0, 0, 0, 0.8)'
+            ctx.shadowBlur = 10
+            ctx.fillText(textToRender, targetWidth / 2, textY)
+          } else {
+            // Clean Minimal: Elegant white text on translucent dark badge
+            ctx.font = '700 42px Inter, sans-serif'
+            ctx.textAlign = 'center'
+            ctx.textBaseline = 'middle'
+
+            const metrics = ctx.measureText(textToRender)
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.7)'
+            ctx.beginPath()
+            ctx.roundRect(
+              targetWidth / 2 - metrics.width / 2 - 24,
+              textY - 24 - 10,
+              metrics.width + 48,
+              48 + 20,
+              24
+            )
+            ctx.fill()
+
+            ctx.fillStyle = '#ffffff'
+            ctx.fillText(textToRender, targetWidth / 2, textY)
           }
 
-          // Caption text
-          ctx.fillStyle = captionColor
-          ctx.shadowColor = 'rgba(0, 0, 0, 0.8)'
-          ctx.shadowBlur = 8
-          ctx.fillText(captionText, targetWidth / 2, textY + (fontSize * 1.8) / 3)
           ctx.restore()
         }
-      } else {
-        // Placeholder when video is loading or none loaded
-        ctx.fillStyle = '#0f1318'
-        ctx.fillRect(0, 0, targetWidth, targetHeight)
-        ctx.fillStyle = '#64748b'
-        ctx.font = '24px sans-serif'
+      }
+
+      // PASS 4: Headline Banner Text Layer
+      const titleLayer = layers.find(l => l.id === 'layer-title')
+      if (captionText && titleLayer?.visible !== false) {
+        ctx.save()
+        ctx.font = `bold ${fontSize * 1.8}px Inter, sans-serif`
         ctx.textAlign = 'center'
-        if (videoSrc) {
-          ctx.fillText('Loading media stream...', targetWidth / 2, targetHeight / 2)
-        } else {
-          ctx.fillText('Import video or photo to preview', targetWidth / 2, targetHeight / 2)
+        ctx.fillStyle = captionColor
+
+        let textY = targetHeight * 0.15
+        if (captionPosition === 'center') textY = targetHeight * 0.5
+        if (captionPosition === 'bottom') textY = targetHeight * 0.85
+
+        const textWidth = ctx.measureText(captionText).width
+        const padding = 20
+
+        // Caption background badge
+        if (captionBg) {
+          ctx.fillStyle = 'rgba(0, 0, 0, 0.75)'
+          ctx.beginPath()
+          ctx.roundRect(
+            targetWidth / 2 - textWidth / 2 - padding,
+            textY - (fontSize * 1.8) / 2 - 10,
+            textWidth + padding * 2,
+            fontSize * 1.8 + 20,
+            16
+          )
+          ctx.fill()
         }
+
+        // Caption text
+        ctx.fillStyle = captionColor
+        ctx.shadowColor = 'rgba(0, 0, 0, 0.8)'
+        ctx.shadowBlur = 8
+        ctx.fillText(captionText, targetWidth / 2, textY + (fontSize * 1.8) / 3)
+        ctx.restore()
       }
 
       animId = requestAnimationFrame(render)
@@ -1167,10 +1200,15 @@ export default function StudioEditorPage() {
         <audio
           ref={audioRef}
           src={audioSrc}
-          crossOrigin="anonymous"
           preload="auto"
           muted={isMuted}
           className="hidden"
+          onError={() => {
+            console.warn('[Audio playback fallback to stream-proxy]')
+            if (audioSrc && !audioSrc.includes('/api/stream-proxy') && audioSrc.startsWith('http')) {
+              setAudioSrc(`/api/stream-proxy?url=${encodeURIComponent(audioSrc)}&quality=audio`)
+            }
+          }}
         />
       )}
 
@@ -1179,10 +1217,9 @@ export default function StudioEditorPage() {
         <video
           ref={videoRef}
           src={videoSrc}
-          crossOrigin="anonymous"
           playsInline
           preload="auto"
-          muted={isMuted}
+          muted={audioSrc ? true : isMuted}
           onTimeUpdate={() => {
             if (videoRef.current) {
               const cur = videoRef.current.currentTime
@@ -1214,20 +1251,9 @@ export default function StudioEditorPage() {
             if (audioRef.current) audioRef.current.pause()
           }}
           onError={() => {
-            console.warn('[Video playback error, retrying without proxy or crossOrigin]')
-            if (videoRef.current) {
-              if (videoRef.current.crossOrigin) {
-                videoRef.current.removeAttribute('crossOrigin')
-                videoRef.current.load()
-              } else if (videoSrc && videoSrc.includes('/api/stream-proxy')) {
-                try {
-                  const u = new URL(videoSrc, window.location.href)
-                  const direct = u.searchParams.get('url')
-                  if (direct) {
-                    setVideoSrc(direct)
-                  }
-                } catch {}
-              }
+            console.warn('[Video playback fallback to stream-proxy]')
+            if (videoSrc && !videoSrc.includes('/api/stream-proxy') && videoSrc.startsWith('http')) {
+              setVideoSrc(`/api/stream-proxy?url=${encodeURIComponent(videoSrc)}&quality=${encodeURIComponent(targetQuality || '720')}`)
             }
           }}
           className="hidden"
