@@ -11,6 +11,38 @@ console.log('====================================================')
 console.log('🚀 A2Z Downloader - Windows .EXE Setup Packaging')
 console.log('====================================================\n')
 
+// Ensure bin/ directory has yt-dlp.exe and ffmpeg.exe
+const rootDir = path.join(__dirname, '..')
+const binDir = path.join(rootDir, 'bin')
+if (!fs.existsSync(binDir)) {
+  fs.mkdirSync(binDir, { recursive: true })
+}
+
+// 1. Check/copy ffmpeg.exe
+const binFfmpeg = path.join(binDir, 'ffmpeg.exe')
+if (!fs.existsSync(binFfmpeg)) {
+  try {
+    const ffmpegStatic = require('ffmpeg-static')
+    if (ffmpegStatic && fs.existsSync(ffmpegStatic)) {
+      console.log('📦 Copying ffmpeg.exe to bin/ ...')
+      fs.copyFileSync(ffmpegStatic, binFfmpeg)
+    }
+  } catch {
+    console.log('⚠️ ffmpeg-static not found.')
+  }
+}
+
+// 2. Check/download yt-dlp.exe
+const binYtDlp = path.join(binDir, 'yt-dlp.exe')
+if (!fs.existsSync(binYtDlp)) {
+  console.log('📦 Downloading yt-dlp.exe to bin/ ...')
+  try {
+    execSync('curl.exe -L "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe" -o "' + binYtDlp + '"', { stdio: 'inherit' })
+  } catch (err) {
+    console.warn('⚠️ Could not download yt-dlp.exe automatically. Please place it in bin/yt-dlp.exe')
+  }
+}
+
 // Check if electron is available
 try {
   require.resolve('electron')

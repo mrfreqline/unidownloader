@@ -38,6 +38,10 @@ import {
   Monitor,
   Smartphone,
   Download,
+  FolderOpen,
+  Play,
+  Loader2,
+  Sparkles,
 } from 'lucide-react'
 
 const AD_SMARTLINK = 'https://www.profitableratecpmnetwork.com/gvwaq8hih?key=3a220d2a7e229bd864d3aac504d1e304'
@@ -88,9 +92,62 @@ export default function Home() {
   const [latestClipBlobUrl, setLatestClipBlobUrl] = useState<string | null>(null)
   const [nativeProgress, setNativeProgress] = useState<{ id: number; pct: number; text: string } | null>(null)
 
+  // Windows Desktop Turbo Engine State
+  const [isDesktop, setIsDesktop] = useState(false)
+  const [desktopProgress, setDesktopProgress] = useState<{
+    id: string
+    title: string
+    percent: number
+    speed: string
+    total: string
+    eta: string
+    status: string
+    isComplete: boolean
+    filePath?: string
+    error?: string
+  } | null>(null)
+
   useEffect(() => {
     // Listen for live Android native DownloadManager progress events
     if (typeof window !== 'undefined') {
+      const isDesk = !!(window as any).electronAPI?.isElectron || navigator.userAgent.includes('A2ZDesktopApp')
+      setIsDesktop(isDesk)
+
+      if (window.electronAPI) {
+        const unsubProg = window.electronAPI.onDownloadProgress((data) => {
+          setDesktopProgress((prev) => {
+            if (!prev) return prev
+            return {
+              ...prev,
+              percent: data.percent,
+              speed: data.speed || prev.speed,
+              total: data.total || prev.total,
+              eta: data.eta || prev.eta,
+              status: data.status || prev.status,
+            }
+          })
+        })
+
+        const unsubComp = window.electronAPI.onDownloadComplete((data) => {
+          setDesktopProgress((prev) => {
+            if (!prev) return prev
+            return {
+              ...prev,
+              percent: data.success ? 100 : prev.percent,
+              status: data.success ? '✅ Download Complete!' : (data.error || 'Download failed'),
+              isComplete: true,
+              filePath: data.filePath,
+              error: data.error,
+            }
+          })
+        })
+
+        return () => {
+          unsubProg?.()
+          unsubComp?.()
+        }
+      }
+
       (window as any).onNativeDownloadProgress = (id: number, pct: number, bytes: number, total: number, name: string) => {
         setIsDownloading(true)
         const downloadedMB = (bytes / (1024 * 1024)).toFixed(1)
@@ -754,6 +811,41 @@ export default function Home() {
     }
   }
 
+  const startDesktopNativeDownload = async (pendingObj?: any) => {
+    const toExecute = pendingObj || pendingDownload
+    if (!toExecute || typeof window === 'undefined' || !window.electronAPI?.startNativeDownload) {
+      return
+    }
+    setPendingDownload(null)
+    const dlId = 'dl_' + Date.now()
+    const mediaTitle = toExecute.customTitle || analyzedMedia?.title || 'Media Video'
+    setDesktopProgress({
+      id: dlId,
+      title: mediaTitle,
+      percent: 0,
+      speed: '',
+      total: '',
+      eta: '',
+      status: 'Connecting to local high-speed engine...',
+      isComplete: false,
+    })
+
+    const sourceUrl = analyzedMedia?.originalUrl || toExecute.downloadUrl || url
+    const res = await window.electronAPI.startNativeDownload({
+      id: dlId,
+      url: sourceUrl,
+      format: toExecute.format,
+      customTitle: mediaTitle,
+      audioOnly: toExecute.mediaType === 'audio',
+    })
+
+    if (!res.success) {
+      setDesktopProgress((prev) =>
+        prev ? { ...prev, isComplete: true, error: res.error || 'Failed to start local engine' } : null
+      )
+    }
+  }
+
   const platforms = [
     { name: 'TeraBox / ShareBox', type: 'Folders & Files' },
     { name: 'TikTok', type: 'No Watermark HD' },
@@ -1216,7 +1308,7 @@ export default function Home() {
         onClose={() => setIsAppModalOpen(false)}
       />
 
-      {/* Download Confirmation Modal ("Do you want to really download?") */}
+      {/* Download Confirmation Modal */}
       {pendingDownload && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in-50 duration-200">
           <div className="relative w-full max-w-md p-5 sm:p-6 rounded-2xl bg-zinc-900 border border-zinc-700/80 shadow-2xl space-y-4 text-left">
@@ -1255,39 +1347,211 @@ export default function Home() {
                     {analyzedMedia.platform}
                   </span>
                 )}
+                {isDesktop && (
+                  <span className="px-2 py-0.5 rounded-md bg-emerald-500/15 text-emerald-400 border border-emerald-500/25 flex items-center gap-1 font-bold">
+                    <Zap className="w-3 h-3" /> Turbo Engine Ready
+                  </span>
+                )}
               </div>
             </div>
 
-            <p className="text-xs text-zinc-400 leading-relaxed">
-              Your browser (Chrome / Brave) will process this download. You can track progress, check download speed, and view complete history via browser details.
-            </p>
+            {isDesktop ? (
+              <div className="space-y-2.5 pt-1">
+                <button
+                  type="button"
+                  onClick={() => startDesktopNativeDownload(pendingDownload)}
+                  className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-emerald-500 via-teal-400 to-cyan-500 text-zinc-950 hover:brightness-105 active:scale-[0.98] text-xs font-bold transition flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20 cursor-pointer"
+                >
+                  <Zap className="w-4 h-4 fill-current stroke-[2]" />
+                  <span>⚡ PC Turbo Download (Full 4K / Any Length)</span>
+                </button>
+                <p className="text-[11px] text-zinc-400 text-center leading-tight">
+                  High-speed multi-threaded engine. No timeouts. Saves directly to PC Downloads.
+                </p>
+                <div className="flex items-center gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const toExecute = pendingDownload
+                      setPendingDownload(null)
+                      executeDownload(
+                        toExecute.format,
+                        toExecute.mediaType,
+                        toExecute.enhancement,
+                        toExecute.downloadUrl,
+                        toExecute.customTitle
+                      )
+                    }}
+                    className="flex-1 py-2 px-3 rounded-lg border border-zinc-700/80 hover:bg-zinc-800 text-zinc-300 text-xs transition cursor-pointer text-center"
+                  >
+                    🌐 Browser Download
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPendingDownload(null)}
+                    className="py-2 px-4 rounded-lg border border-zinc-800 hover:bg-zinc-800 text-zinc-400 hover:text-white text-xs transition cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div>
+                <p className="text-xs text-zinc-400 leading-relaxed mb-3">
+                  Your browser will process this download. You can track progress, check download speed, and view complete history via browser details.
+                </p>
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setPendingDownload(null)}
+                    className="flex-1 py-2.5 px-4 rounded-xl border border-zinc-700 hover:bg-zinc-800 text-zinc-300 text-xs font-semibold transition cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const toExecute = pendingDownload
+                      setPendingDownload(null)
+                      executeDownload(
+                        toExecute.format,
+                        toExecute.mediaType,
+                        toExecute.enhancement,
+                        toExecute.downloadUrl,
+                        toExecute.customTitle
+                      )
+                    }}
+                    className="flex-1 py-2.5 px-4 rounded-xl bg-gradient-to-r from-emerald-500 via-teal-400 to-cyan-500 text-zinc-950 hover:brightness-105 active:scale-[0.98] text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-md shadow-emerald-500/20 cursor-pointer"
+                  >
+                    <Download className="w-4 h-4 stroke-[2.5]" />
+                    <span>Yes, Download</span>
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
-            <div className="flex items-center gap-3 pt-2">
-              <button
-                type="button"
-                onClick={() => setPendingDownload(null)}
-                className="flex-1 py-2.5 px-4 rounded-xl border border-zinc-700 hover:bg-zinc-800 text-zinc-300 text-xs font-semibold transition cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  const toExecute = pendingDownload
-                  setPendingDownload(null)
-                  executeDownload(
-                    toExecute.format,
-                    toExecute.mediaType,
-                    toExecute.enhancement,
-                    toExecute.downloadUrl,
-                    toExecute.customTitle
-                  )
-                }}
-                className="flex-1 py-2.5 px-4 rounded-xl bg-gradient-to-r from-emerald-500 via-teal-400 to-cyan-500 text-zinc-950 hover:brightness-105 active:scale-[0.98] text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-md shadow-emerald-500/20 cursor-pointer"
-              >
-                <Download className="w-4 h-4 stroke-[2.5]" />
-                <span>Yes, Download</span>
-              </button>
+      {/* Windows Desktop Live Progress Modal */}
+      {desktopProgress && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in-50 duration-200">
+          <div className="relative w-full max-w-md p-6 rounded-2xl bg-zinc-900 border border-emerald-500/30 shadow-2xl shadow-emerald-500/10 space-y-4 text-left">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center border border-emerald-500/30">
+                  {desktopProgress.isComplete ? (
+                    <CheckCircle2 className="w-5 h-5 text-emerald-400" />
+                  ) : desktopProgress.error ? (
+                    <AlertCircle className="w-5 h-5 text-rose-400" />
+                  ) : (
+                    <Zap className="w-5 h-5 fill-current animate-pulse text-emerald-400" />
+                  )}
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white">
+                    {desktopProgress.isComplete ? 'Download Ready!' : desktopProgress.error ? 'Download Alert' : '⚡ Turbo Downloading...'}
+                  </h3>
+                  <p className="text-[11px] text-zinc-400 truncate max-w-[260px]">{desktopProgress.title}</p>
+                </div>
+              </div>
+              {desktopProgress.isComplete && (
+                <button
+                  type="button"
+                  onClick={() => setDesktopProgress(null)}
+                  className="text-zinc-400 hover:text-white p-1 rounded-lg hover:bg-zinc-800 transition cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              )}
+            </div>
+
+            {/* Progress Bar */}
+            <div className="space-y-1.5">
+              <div className="w-full h-3 rounded-full bg-zinc-800/90 overflow-hidden border border-zinc-700/50 p-0.5">
+                <div
+                  className="h-full rounded-full bg-gradient-to-r from-emerald-500 via-teal-400 to-cyan-400 transition-all duration-200 shadow-sm shadow-emerald-400/50"
+                  style={{ width: `${Math.max(3, Math.min(100, desktopProgress.percent))}%` }}
+                />
+              </div>
+              <div className="flex items-center justify-between text-[11px] font-mono text-zinc-400">
+                <span className="text-emerald-400 font-bold">{desktopProgress.percent.toFixed(0)}%</span>
+                <div className="flex items-center gap-2">
+                  {desktopProgress.speed && <span className="text-zinc-300">⚡ {desktopProgress.speed}</span>}
+                  {desktopProgress.total && <span>📦 {desktopProgress.total}</span>}
+                  {desktopProgress.eta && <span>⏳ {desktopProgress.eta}</span>}
+                </div>
+              </div>
+            </div>
+
+            {/* Status Text */}
+            <div className="p-3 rounded-xl bg-zinc-950/70 border border-zinc-800 text-xs">
+              <p className={`font-mono ${desktopProgress.error ? 'text-rose-400' : 'text-zinc-300'}`}>
+                {desktopProgress.status}
+              </p>
+              {desktopProgress.filePath && (
+                <p className="text-[10px] text-zinc-500 truncate mt-1">
+                  Location: {desktopProgress.filePath}
+                </p>
+              )}
+            </div>
+
+            {/* Action Buttons */}
+            <div className="pt-1">
+              {!desktopProgress.isComplete ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (window.electronAPI?.cancelNativeDownload) {
+                      window.electronAPI.cancelNativeDownload(desktopProgress.id)
+                    }
+                    setDesktopProgress(null)
+                  }}
+                  className="w-full py-2.5 px-4 rounded-xl border border-zinc-700 hover:bg-zinc-800 text-zinc-300 text-xs font-semibold transition cursor-pointer"
+                >
+                  Cancel Download
+                </button>
+              ) : desktopProgress.error ? (
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setDesktopProgress(null)}
+                    className="flex-1 py-2.5 px-4 rounded-xl border border-zinc-700 hover:bg-zinc-800 text-zinc-300 text-xs font-semibold transition cursor-pointer"
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              ) : (
+                <div className="flex flex-col sm:flex-row items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (window.electronAPI?.openFolder) {
+                        window.electronAPI.openFolder(desktopProgress.filePath)
+                      }
+                    }}
+                    className="w-full sm:flex-1 py-2.5 px-4 rounded-xl bg-emerald-500/20 border border-emerald-500/40 hover:bg-emerald-500/30 text-emerald-300 text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <FolderOpen className="w-4 h-4" />
+                    <span>Open in File Explorer</span>
+                  </button>
+                  <Link
+                    href="/editor"
+                    onClick={() => setDesktopProgress(null)}
+                    className="w-full sm:flex-1 py-2.5 px-4 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-semibold transition flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <Play className="w-3.5 h-3.5" />
+                    <span>Open Studio</span>
+                  </Link>
+                  <button
+                    type="button"
+                    onClick={() => setDesktopProgress(null)}
+                    className="w-full sm:w-auto py-2.5 px-4 rounded-xl border border-zinc-700/80 hover:bg-zinc-800 text-zinc-400 hover:text-white text-xs transition cursor-pointer"
+                  >
+                    Done
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </div>
