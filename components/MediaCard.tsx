@@ -700,7 +700,7 @@ export default function MediaCard({
                   <span>Download PC (.EXE)</span>
                 </a>
                 <a
-                  href="https://github.com/mrfreqline/unidownloader/releases/latest/download/A2Z-Downloader.apk"
+                  href="https://github.com/mrfreqline/unidownloader/raw/main/public/apps/A2Z-Downloader.apk"
                   download="A2Z-Downloader.apk"
                   className="py-2.5 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-sm transition"
                 >

@@ -186,7 +186,7 @@ export default function AppDownloadModal({ isOpen, onClose }: AppDownloadModalPr
               </button>
 
               <a
-                href="https://github.com/mrfreqline/unidownloader/releases/latest/download/A2Z-Downloader.apk"
+                href="https://github.com/mrfreqline/unidownloader/raw/main/public/apps/A2Z-Downloader.apk"
                 download="A2Z-Downloader.apk"
                 className="w-full py-3 px-4 rounded-xl bg-zinc-100 dark:bg-zinc-900 hover:bg-zinc-200 dark:hover:bg-zinc-800 text-zinc-900 dark:text-zinc-100 border border-zinc-200 dark:border-zinc-800 font-semibold text-xs sm:text-sm transition flex items-center justify-center gap-2 shadow-xs cursor-pointer touch-manipulation"
               >

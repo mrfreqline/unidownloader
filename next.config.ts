@@ -9,7 +9,7 @@ const nextConfig: NextConfig = {
     return [
       {
         source: '/apps/A2Z-Downloader.apk',
-        destination: 'https://github.com/mrfreqline/unidownloader/releases/latest/download/A2Z-Downloader.apk',
+        destination: 'https://github.com/mrfreqline/unidownloader/raw/main/public/apps/A2Z-Downloader.apk',
         permanent: false,
       },
       {
