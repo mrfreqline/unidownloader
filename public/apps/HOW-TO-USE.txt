@@ -3,6 +3,21 @@
                            SETUP & USER GUIDE
 ================================================================================
 
+********************************************************************************
+                 🛡️ 100% SAFE & COMPLETELY VIRUS-FREE NOTICE
+********************************************************************************
+A2Z Downloader is 100% clean, safe, and completely virus-free.
+No need to worry about anything!
+
+Because this is a free, independent open-source release, Windows SmartScreen 
+or "Smart App Control" may show an unrecognized app warning when opening.
+- TO RUN WITHOUT ANY ISSUES:
+  1. If Windows SmartScreen pops up: Click "More info" -> "Run anyway".
+  2. If Windows 11 Smart App Control blocks it: Go to Windows Security -> 
+     App & browser control -> Smart App Control -> set to "Off" (or Evaluation).
+  3. No need to worry! The app runs cleanly and safely on your PC.
+********************************************************************************
+
 Thank you for downloading A2Z Downloader!
 This software is 100% FREE to use. Below is everything you need to know about
 how to run it, what features are supported, its pros, and current limitations.
