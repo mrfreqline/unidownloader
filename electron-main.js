@@ -333,9 +333,12 @@ ipcMain.handle('native-render-clip', async (event, opts) => {
     // Blurred side padding with centered zoomed foreground
     const fgW = Math.round(outW * zoom / 2) * 2
     const fgH = Math.round(outH * zoom / 2) * 2
+    const fgScale = zoom !== 1.0
+      ? `scale=${fgW}:${fgH}:force_original_aspect_ratio=decrease,crop=min(iw\\,${outW}):min(ih\\,${outH})`
+      : `scale=${outW}:${outH}:force_original_aspect_ratio=decrease`
     args.push(
       '-filter_complex',
-      `[0:v]scale=${outW}:${outH}:force_original_aspect_ratio=increase,crop=${outW}:${outH},boxblur=20:5[bg];[0:v]scale=${fgW}:${fgH}:force_original_aspect_ratio=decrease,crop=min(iw\\,${outW}):min(ih\\,${outH})[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2,setsar=1`,
+      `[0:v]scale=${outW}:${outH}:force_original_aspect_ratio=increase,crop=${outW}:${outH},boxblur=20:5[bg];[0:v]${fgScale}[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2,setsar=1`,
       '-c:v', 'libx264',
       '-preset', 'fast',
       '-crf', '20',

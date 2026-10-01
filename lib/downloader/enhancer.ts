@@ -71,6 +71,7 @@ export interface EnhancementSettings {
   aspectRatio?: 'original' | '16:9' | '9:16' | '1:1'
   targetQuality?: string
   zoomScale?: number
+  blurPadding?: boolean
 }
 
 export interface EnhancedResult {
@@ -223,35 +224,59 @@ export async function processMediaEnhancement(
           ]
 
           const zoom = Math.max(0.5, Math.min(5.0, Number(settings.zoomScale) || 1.0))
+          const useBlur = settings.blurPadding !== false
 
           if (ratio === '9:16') {
-            // TikTok / Reels 9:16 vertical (1080x1920 or 2160x3840 for 4K) with optional zoom
-            const vfFilter = zoom > 1.0
-              ? `crop=w='trunc(min(iw,ih*9/16)/${zoom}/2)*2':h='trunc(min(ih,iw*16/9)/${zoom}/2)*2':x='(iw-ow)/2':y='(ih-oh)/2',scale=${scaleW}:${scaleH},setsar=1`
-              : `scale=${scaleW}:${scaleH}:force_original_aspect_ratio=decrease,pad=${scaleW}:${scaleH}:(ow-iw)/2:(oh-ih)/2:black`
+            // TikTok / Reels 9:16 vertical (1080x1920 or 2160x3840 for 4K)
+            let vfFilter: string
+            if (useBlur) {
+              const fgW = Math.round(scaleW * zoom / 2) * 2
+              const fgH = Math.round(scaleH * zoom / 2) * 2
+              const fgScale = zoom !== 1.0
+                ? `scale=${fgW}:${fgH}:force_original_aspect_ratio=decrease,crop=min(iw\\,${scaleW}):min(ih\\,${scaleH})`
+                : `scale=${scaleW}:${scaleH}:force_original_aspect_ratio=decrease`
+              vfFilter = `split[bg][fg];[bg]scale=${scaleW}:${scaleH}:force_original_aspect_ratio=increase,crop=${scaleW}:${scaleH},boxblur=20:5[bg2];[fg]${fgScale}[fg2];[bg2][fg2]overlay=(W-w)/2:(H-h)/2,setsar=1`
+            } else {
+              vfFilter = `crop=w='trunc(min(iw,ih*9/16)/${zoom}/2)*2':h='trunc(min(ih,iw*16/9)/${zoom}/2)*2':x='(iw-ow)/2':y='(ih-oh)/2',scale=${scaleW}:${scaleH},setsar=1`
+            }
             cmd.outputOptions([
               ...mapOpts,
               '-vf', vfFilter,
               ...smoothVideoFlags,
             ])
           } else if (ratio === '1:1') {
-            // Square 1:1 (1080x1080 or 2160x2160 for 4K) with optional zoom
+            // Square 1:1 (1080x1080 or 2160x2160 for 4K)
             const sqDim = is4KTier ? 2160 : 1080
-            const vfFilter = zoom > 1.0
-              ? `crop=w='trunc(min(iw,ih)/${zoom}/2)*2':h='trunc(min(ih,iw)/${zoom}/2)*2':x='(iw-ow)/2':y='(ih-oh)/2',scale=${sqDim}:${sqDim},setsar=1`
-              : `scale=${sqDim}:${sqDim}:force_original_aspect_ratio=decrease,pad=${sqDim}:${sqDim}:(ow-iw)/2:(oh-ih)/2:black`
+            let vfFilter: string
+            if (useBlur) {
+              const fgDim = Math.round(sqDim * zoom / 2) * 2
+              const fgScale = zoom !== 1.0
+                ? `scale=${fgDim}:${fgDim}:force_original_aspect_ratio=decrease,crop=min(iw\\,${sqDim}):min(ih\\,${sqDim})`
+                : `scale=${sqDim}:${sqDim}:force_original_aspect_ratio=decrease`
+              vfFilter = `split[bg][fg];[bg]scale=${sqDim}:${sqDim}:force_original_aspect_ratio=increase,crop=${sqDim}:${sqDim},boxblur=20:5[bg2];[fg]${fgScale}[fg2];[bg2][fg2]overlay=(W-w)/2:(H-h)/2,setsar=1`
+            } else {
+              vfFilter = `crop=w='trunc(min(iw,ih)/${zoom}/2)*2':h='trunc(min(ih,iw)/${zoom}/2)*2':x='(iw-ow)/2':y='(ih-oh)/2',scale=${sqDim}:${sqDim},setsar=1`
+            }
             cmd.outputOptions([
               ...mapOpts,
               '-vf', vfFilter,
               ...smoothVideoFlags,
             ])
           } else if (ratio === '16:9') {
-            // Landscape 16:9 (1920x1080 or 3840x2160 for 4K) with optional zoom
+            // Landscape 16:9 (1920x1080 or 3840x2160 for 4K)
             const landW = is4KTier ? 3840 : 1920
             const landH = is4KTier ? 2160 : 1080
-            const vfFilter = zoom > 1.0
-              ? `crop=w='trunc(min(iw,ih*16/9)/${zoom}/2)*2':h='trunc(min(ih,iw*9/16)/${zoom}/2)*2':x='(iw-ow)/2':y='(ih-oh)/2',scale=${landW}:${landH},setsar=1`
-              : `scale=${landW}:${landH}:force_original_aspect_ratio=decrease,pad=${landW}:${landH}:(ow-iw)/2:(oh-ih)/2:black`
+            let vfFilter: string
+            if (useBlur) {
+              const fgW = Math.round(landW * zoom / 2) * 2
+              const fgH = Math.round(landH * zoom / 2) * 2
+              const fgScale = zoom !== 1.0
+                ? `scale=${fgW}:${fgH}:force_original_aspect_ratio=decrease,crop=min(iw\\,${landW}):min(ih\\,${landH})`
+                : `scale=${landW}:${landH}:force_original_aspect_ratio=decrease`
+              vfFilter = `split[bg][fg];[bg]scale=${landW}:${landH}:force_original_aspect_ratio=increase,crop=${landW}:${landH},boxblur=20:5[bg2];[fg]${fgScale}[fg2];[bg2][fg2]overlay=(W-w)/2:(H-h)/2,setsar=1`
+            } else {
+              vfFilter = `crop=w='trunc(min(iw,ih*16/9)/${zoom}/2)*2':h='trunc(min(ih,iw*9/16)/${zoom}/2)*2':x='(iw-ow)/2':y='(ih-oh)/2',scale=${landW}:${landH},setsar=1`
+            }
             cmd.outputOptions([
               ...mapOpts,
               '-vf', vfFilter,

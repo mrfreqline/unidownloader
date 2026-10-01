@@ -222,6 +222,7 @@ export async function GET(req: NextRequest) {
   const aspectRatio = (searchParams.get('aspectRatio') as any) || 'original'
   const rawZoom = parseFloat(searchParams.get('zoomScale') || '1.0')
   const zoomScale = !isNaN(rawZoom) && rawZoom > 0 ? rawZoom : 1.0
+  const blurPadding = searchParams.get('blurPadding') !== 'false'
 
   const enhancement = trimEnabled
     ? {
@@ -231,6 +232,7 @@ export async function GET(req: NextRequest) {
         trimEnd,
         aspectRatio,
         zoomScale,
+        blurPadding,
         compressionLevel: 'original' as const,
         audioBitrate: '320k' as const,
         normalizeAudio: false,

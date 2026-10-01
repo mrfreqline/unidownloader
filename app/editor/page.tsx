@@ -934,6 +934,7 @@ export default function StudioEditorPage() {
           trimEnd: String(clipStart + (clipDuration || duration || 60)),
           aspectRatio: aspectRatio,
           zoomScale: String(zoomScale || 1.0),
+          blurPadding: blurPadding ? 'true' : 'false',
         })
         const downloadHref = `${window.location.origin}/api/download?${queryParams.toString()}`
         ;(window as any).AndroidBridge.download(downloadHref, finalFilename, 'video/mp4')
@@ -1002,6 +1003,7 @@ export default function StudioEditorPage() {
             targetFormat: 'mp4',
             compressionLevel: 'original',
             zoomScale: zoomScale || 1.0,
+            blurPadding: Boolean(blurPadding),
           },
         }),
       })
