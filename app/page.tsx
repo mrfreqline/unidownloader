@@ -651,12 +651,17 @@ export default function Home() {
         }
 
         if (typeof window !== 'undefined' && (window as any).AndroidBridge?.download && targetImg) {
-          const imgName = `${(customTitle || analyzedMedia?.title || 'image').slice(0, 30)}.jpg`
-          const imgDownloadUrl = targetImg.startsWith('http') ? `/api/thumbnail?url=${encodeURIComponent(targetImg)}` : targetImg
-          ;(window as any).AndroidBridge.download(imgDownloadUrl, imgName, 'image/jpeg')
-          setDownloadSuccessMsg(`Downloading ${imgName} (Check notification bar)`)
-          setIsDownloading(false)
-          return
+          try {
+            const imgName = `${(customTitle || analyzedMedia?.title || 'image').slice(0, 30)}.jpg`
+            const imgDownloadUrl = targetImg.startsWith('http') ? `/api/thumbnail?url=${encodeURIComponent(targetImg)}` : targetImg
+            const fullImgUrl = new URL(imgDownloadUrl, window.location.href).href
+            ;(window as any).AndroidBridge.download(fullImgUrl, imgName, 'image/jpeg')
+            setDownloadSuccessMsg(`Downloading ${imgName} (Check notification bar)`)
+            setIsDownloading(false)
+            return
+          } catch (bridgeErr) {
+            console.warn('[AndroidBridge image download fallback]:', bridgeErr)
+          }
         }
       }
 
@@ -674,10 +679,15 @@ export default function Home() {
 
         // Native Android Download Manager integration
         if (typeof window !== 'undefined' && (window as any).AndroidBridge?.download) {
-          ;(window as any).AndroidBridge.download(downloadHref, filename, mimeType)
-          setDownloadSuccessMsg(`Downloading ${filename} (Check notification bar)`)
-          setIsDownloading(false)
-          return
+          try {
+            const fullDownloadUrl = new URL(downloadHref, window.location.href).href
+            ;(window as any).AndroidBridge.download(fullDownloadUrl, filename, mimeType)
+            setDownloadSuccessMsg(`Downloading ${filename} (Check notification bar)`)
+            setIsDownloading(false)
+            return
+          } catch (bridgeErr) {
+            console.warn('[AndroidBridge download error]:', bridgeErr)
+          }
         }
 
         // Windows Desktop (.exe / Electron) integration:
@@ -799,6 +809,19 @@ export default function Home() {
           const defaultFilename = mediaType === 'image' ? 'image.jpg' : mediaType === 'audio' ? 'audio.mp3' : 'media.mp4'
           const filename = data.filename || defaultFilename
           setDirectDownloadLink({ url: data.redirectUrl, filename })
+
+          if (typeof window !== 'undefined' && (window as any).AndroidBridge?.download) {
+            try {
+              const fullUrl = new URL(data.redirectUrl, window.location.href).href
+              const mime = mediaType === 'audio' ? 'audio/mpeg' : mediaType === 'image' ? 'image/jpeg' : 'video/mp4'
+              ;(window as any).AndroidBridge.download(fullUrl, filename, mime)
+              setDownloadSuccessMsg(`Downloading ${filename} (Check notification bar)`)
+              setIsDownloading(false)
+              return
+            } catch (bridgeErr) {
+              console.warn('[AndroidBridge fallback]:', bridgeErr)
+            }
+          }
 
           // Trigger native browser save directly into Downloads folder using blob URL
           try {

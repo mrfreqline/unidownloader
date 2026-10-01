@@ -23,11 +23,29 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var webView: WebView
     private val appUrl = "https://a2zdownloader.vercel.app"
+    private var cachedUserAgent: String = ""
 
     inner class AndroidBridge {
         @JavascriptInterface
         fun download(url: String, filename: String?, mimeType: String?) {
-            downloadFileNative(url, webView.settings.userAgentString, filename, mimeType ?: "video/mp4")
+            try {
+                val absoluteUrl = if (url.startsWith("http://") || url.startsWith("https://")) {
+                    url
+                } else {
+                    "$appUrl${if (url.startsWith("/")) "" else "/"}$url"
+                }
+                val ua = if (cachedUserAgent.isNotEmpty()) cachedUserAgent else "Mozilla/5.0 (Linux; Android 10; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36 A2ZDownloaderApp/2.0.0"
+                downloadFileNative(absoluteUrl, ua, filename, mimeType ?: "video/mp4")
+            } catch (e: Exception) {
+                runOnUiThread {
+                    try {
+                        val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        }
+                        startActivity(browserIntent)
+                    } catch (ex: Exception) {}
+                }
+            }
         }
 
         @JavascriptInterface
@@ -51,6 +69,8 @@ class MainActivity : AppCompatActivity() {
             settings.cacheMode = WebSettings.LOAD_DEFAULT
             settings.userAgentString = settings.userAgentString + " A2ZDownloaderApp/2.0.0"
 
+            cachedUserAgent = settings.userAgentString
+
             addJavascriptInterface(AndroidBridge(), "AndroidBridge")
 
             webViewClient = object : WebViewClient() {
@@ -69,8 +89,20 @@ class MainActivity : AppCompatActivity() {
                         return true
                     }
 
-                    // Keep app on main domain. Open external ads or links in system browser so WebView state is NEVER lost!
+                    // Check if this is a direct media file URL (mp4, mp3, cdn, etc.) or a download route
+                    val path = uri.path?.lowercase() ?: ""
                     val host = uri.host?.lowercase() ?: ""
+                    val isMediaDownload = path.endsWith(".mp4") || path.endsWith(".mp3") || path.endsWith(".m4a") ||
+                                          path.endsWith(".webm") || path.contains("videoplayback") ||
+                                          host.contains("cdninstagram.com") || host.contains("fbcdn.net") ||
+                                          url.contains("/api/download")
+
+                    if (isMediaDownload) {
+                        downloadFileNative(url, cachedUserAgent, null, if (path.endsWith(".mp3")) "audio/mpeg" else "video/mp4")
+                        return true
+                    }
+
+                    // Keep app on main domain. Open external ads or links in system browser so WebView state is NEVER lost!
                     val isAppDomain = host == "a2zdownloader.vercel.app" || 
                                      host.endsWith(".vercel.app") || 
                                      host == "localhost" || 
@@ -78,7 +110,9 @@ class MainActivity : AppCompatActivity() {
 
                     if (!isAppDomain) {
                         try {
-                            val externalIntent = Intent(Intent.ACTION_VIEW, uri)
+                            val externalIntent = Intent(Intent.ACTION_VIEW, uri).apply {
+                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            }
                             startActivity(externalIntent)
                         } catch (e: Exception) {
                             // ignore
@@ -96,7 +130,8 @@ class MainActivity : AppCompatActivity() {
 
             // Vidmate-Style Native Download Interceptor
             setDownloadListener { url, userAgent, contentDisposition, mimeType, _ ->
-                downloadFileNative(url, userAgent, contentDisposition, mimeType)
+                val ua = if (!userAgent.isNullOrBlank()) userAgent else cachedUserAgent
+                downloadFileNative(url, ua, contentDisposition, mimeType)
             }
         }
 
@@ -136,8 +171,8 @@ class MainActivity : AppCompatActivity() {
 
     private fun downloadFileNative(initialUrl: String, userAgent: String, rawFileName: String?, mimeType: String) {
         Thread {
+            var targetUrl = initialUrl
             try {
-                var targetUrl = initialUrl
 
                 // Step 1: Follow any 301, 302, 307 redirects to get the real direct CDN URL
                 try {
@@ -149,11 +184,11 @@ class MainActivity : AppCompatActivity() {
                         conn.setRequestProperty("Referer", "https://yt.savetube.me/")
                     } else if (initialUrl.contains("tikwm")) {
                         conn.setRequestProperty("Referer", "https://www.tikwm.com/")
-                    } else if (initialUrl.contains("instagram") || initialUrl.contains("fbcdn")) {
+                    } else if (initialUrl.contains("instagram") || initialUrl.contains("fbcdn") || initialUrl.contains("cdninstagram")) {
                         conn.setRequestProperty("Referer", "https://www.instagram.com/")
                     }
-                    conn.connectTimeout = 6000
-                    conn.readTimeout = 6000
+                    conn.connectTimeout = 8000
+                    conn.readTimeout = 8000
                     val code = conn.responseCode
                     if (code in 300..399) {
                         val loc = conn.getHeaderField("Location")
@@ -186,7 +221,7 @@ class MainActivity : AppCompatActivity() {
                         addRequestHeader("Referer", "https://yt.savetube.me/")
                     } else if (targetUrl.contains("tikwm")) {
                         addRequestHeader("Referer", "https://www.tikwm.com/")
-                    } else if (targetUrl.contains("instagram") || targetUrl.contains("fbcdn")) {
+                    } else if (targetUrl.contains("instagram") || targetUrl.contains("fbcdn") || targetUrl.contains("cdninstagram")) {
                         addRequestHeader("Referer", "https://www.instagram.com/")
                     }
                     setDescription("Downloading with A2Z Downloader...")
@@ -231,10 +266,13 @@ class MainActivity : AppCompatActivity() {
                             isTracking = false
                             val reason = cursor.getInt(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_REASON))
                             runOnUiThread {
-                                Toast.makeText(this@MainActivity, "Download failed (code: $reason). Opening direct stream...", Toast.LENGTH_LONG).show()
+                                Toast.makeText(this@MainActivity, "Starting in browser download manager...", Toast.LENGTH_SHORT).show()
                                 webView.evaluateJavascript("window.onNativeDownloadFailed?.($downloadId, '$safeFileName', $reason)", null)
                                 try {
-                                    startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(targetUrl)))
+                                    val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse(targetUrl)).apply {
+                                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    }
+                                    startActivity(browserIntent)
                                 } catch (e: Exception) {}
                             }
                         }
@@ -246,9 +284,12 @@ class MainActivity : AppCompatActivity() {
                 }
             } catch (e: Exception) {
                 runOnUiThread {
-                    Toast.makeText(this@MainActivity, "Download error: ${e.message}", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this@MainActivity, "Opening browser download...", Toast.LENGTH_SHORT).show()
                     try {
-                        startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(initialUrl)))
+                        val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse(targetUrl)).apply {
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        }
+                        startActivity(browserIntent)
                     } catch (ex: Exception) {}
                 }
             }

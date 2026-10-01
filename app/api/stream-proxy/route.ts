@@ -23,7 +23,8 @@ export async function GET(req: NextRequest) {
     const targetQ = searchParams.get('quality') || '720'
 
     // If user passed a web page URL (YouTube, TikTok, etc.) instead of direct CDN video stream, resolve it!
-    isWeb = /youtube\.com|youtu\.be|tiktok\.com|instagram\.com|twitter\.com|x\.com|facebook\.com/i.test(targetUrl)
+    const isDirectMedia = /cdninstagram\.com|fbcdn\.net|googlevideo\.com|tiktokcdn\.com|byteoversea\.com|ibytedtos\.com|rapidcdn\.app|savetube|tikwm|\.mp4|\.mp3|\.m4a|\.webm|videoplayback/i.test(targetUrl)
+    isWeb = !isDirectMedia && /youtube\.com|youtu\.be|(^|\.)tiktok\.com|(^|\.)instagram\.com|twitter\.com|x\.com|(^|\.)facebook\.com|fb\.watch/i.test(targetUrl)
     if (isWeb) {
       cacheKey = `${targetUrl}_${targetQ}`
       const cached = proxyUrlCache.get(cacheKey)

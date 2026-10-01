@@ -19,6 +19,7 @@ interface DownloadParams {
 }
 
 async function handleDownload(params: DownloadParams) {
+  let targetDownloadUrl = params.downloadUrl
   try {
     const { url, quality, mediaType, downloadUrl: providedDownloadUrl, title = 'media', enhancement, isGetRequest } = params
 
@@ -26,7 +27,7 @@ async function handleDownload(params: DownloadParams) {
       return NextResponse.json({ error: 'No media URL provided' }, { status: 400 })
     }
 
-    let targetDownloadUrl = providedDownloadUrl
+    targetDownloadUrl = providedDownloadUrl
     const isAudio = mediaType === 'audio' || quality === 'Audio Only' || quality === 'mp3'
 
     const isWebpageUrl = (testUrl?: string): boolean => {
@@ -34,14 +35,49 @@ async function handleDownload(params: DownloadParams) {
       try {
         const parsed = new URL(testUrl)
         const host = parsed.hostname.toLowerCase()
+        const pathname = parsed.pathname.toLowerCase()
+
+        // 1. Direct media file extensions and stream paths are NEVER webpages
         if (
-          host.includes('youtube.com') ||
-          host.includes('youtu.be') ||
-          host.includes('tiktok.com') ||
-          host.includes('instagram.com') ||
+          pathname.endsWith('.mp4') ||
+          pathname.endsWith('.mp3') ||
+          pathname.endsWith('.m4a') ||
+          pathname.endsWith('.webm') ||
+          pathname.endsWith('.jpg') ||
+          pathname.endsWith('.jpeg') ||
+          pathname.endsWith('.png') ||
+          pathname.endsWith('.webp') ||
+          pathname.includes('/v/t16/') ||
+          pathname.includes('/o1/v/') ||
+          pathname.includes('videoplayback')
+        ) {
+          return false
+        }
+
+        // 2. Direct media CDN domains are NEVER webpages
+        if (
+          host.includes('cdninstagram.com') ||
+          host.includes('fbcdn.net') ||
+          host.includes('googlevideo.com') ||
+          host.includes('tiktokcdn.com') ||
+          host.includes('byteoversea.com') ||
+          host.includes('ibytedtos.com') ||
+          host.includes('rapidcdn.app') ||
+          host.includes('savetube') ||
+          host.includes('tikwm')
+        ) {
+          return false
+        }
+
+        // 3. Social media webpage URLs
+        if (
+          host === 'youtube.com' || host.endsWith('.youtube.com') ||
+          host === 'youtu.be' ||
+          host === 'tiktok.com' || host.endsWith('.tiktok.com') ||
+          host === 'instagram.com' || host === 'www.instagram.com' ||
           host.includes('twitter.com') ||
           host.includes('x.com') ||
-          host.includes('facebook.com') ||
+          host === 'facebook.com' || host === 'www.facebook.com' || host === 'm.facebook.com' ||
           host.includes('fb.watch') ||
           host.includes('reddit.com') ||
           host.includes('pinterest.com') ||
@@ -90,6 +126,9 @@ async function handleDownload(params: DownloadParams) {
     }
 
     if (!targetDownloadUrl || isWebpageUrl(targetDownloadUrl)) {
+      if (isGetRequest && targetDownloadUrl) {
+        return NextResponse.redirect(targetDownloadUrl)
+      }
       return NextResponse.json(
         { error: 'Could not extract direct stream. Please try another link.' },
         { status: 400 }
@@ -202,6 +241,9 @@ async function handleDownload(params: DownloadParams) {
     return NextResponse.json({ redirectUrl: targetDownloadUrl, filename: cleanFileName })
   } catch (err: any) {
     console.error('[Download Route Error]:', err?.message || err)
+    if (params.isGetRequest && (targetDownloadUrl || params.downloadUrl)) {
+      return NextResponse.redirect(targetDownloadUrl || params.downloadUrl!)
+    }
     return NextResponse.json(
       { error: err?.message || 'Download stream failed. Please try a different quality format.' },
       { status: 500 }
