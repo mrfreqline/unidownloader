@@ -1,0 +1,96 @@
+================================================================================
+                    A2Z DOWNLOADER & STUDIO EDITOR (v2.1.0)
+                           SETUP & USER GUIDE
+================================================================================
+
+Thank you for downloading A2Z Downloader!
+This software is 100% FREE to use. Below is everything you need to know about
+how to run it, what features are supported, its pros, and current limitations.
+
+--------------------------------------------------------------------------------
+1. HOW TO INSTALL & RUN
+--------------------------------------------------------------------------------
+
+[WINDOWS PC USERS]
+Option A - Standard Installer:
+  1. Download 'A2Z-Downloader-Setup.exe'.
+  2. Double-click the file to install.
+  3. Once installed, an 'A2Z Downloader' icon will appear on your Desktop.
+  4. Launch the app and start downloading or editing!
+
+Option B - Direct Run (Portable):
+  If using the direct unpacked version from GitHub, run 'Run-A2Z.bat' or 
+  'A2Z Downloader.exe' inside the folder without installation.
+
+[ANDROID PHONE USERS]
+  1. Download 'A2Z-Downloader.apk'.
+  2. Tap the downloaded .apk file to install on your Android device.
+  3. Allow 'Install from Unknown Sources' if prompted by Android security.
+  4. Open the app to download videos directly into your phone's Gallery.
+
+[WEB USERS]
+  Visit: https://a2zdownloader.vercel.app (Accessible from Chrome, Brave, Safari, Edge)
+
+--------------------------------------------------------------------------------
+2. HOW TO DOWNLOAD VIDEOS & EXTRACT MP3
+--------------------------------------------------------------------------------
+  Step 1: Copy any video link from YouTube, TikTok, Facebook, Instagram, Twitter/X,
+          or direct web hosts.
+  Step 2: Paste the link into the search bar in A2Z Downloader.
+  Step 3: Choose your preferred format:
+          - 1080p Full HD Video
+          - 720p HD Video
+          - Audio Only (320kbps MP3)
+  Step 4: Click 'Download' — the file saves directly to your device's Downloads folder.
+
+--------------------------------------------------------------------------------
+3. HOW TO MAKE SHORT-FORM CLIPS IN STUDIO MODE
+--------------------------------------------------------------------------------
+  Step 1: On any analyzed video, click '✂️ Render Clip & Edit' (or go to Studio tab).
+  Step 2: Choose your aspect ratio:
+          - 9:16 (for TikTok, YouTube Shorts, Instagram Reels)
+          - 16:9 (for YouTube and widescreen screens)
+          - 1:1 (for square posts)
+  Step 3: Set your start time and duration (e.g. 30s or 60s).
+  Step 4: Turn on Kinetic Subtitles and pick a style (Hormozi yellow, TikTok white, Neon cyan).
+  Step 5: Add a headline banner title at the top if desired.
+  Step 6: Click 'Render & Export Video (MP4)'.
+
+--------------------------------------------------------------------------------
+4. PROS (WHAT WORKS GREAT)
+--------------------------------------------------------------------------------
+  ✔ 100% Free for now — No subscriptions, no tokens required on PC, no hidden fees.
+  ✔ No Watermarks on exported videos or clips.
+  ✔ High-speed native download engine powered by yt-dlp & FFmpeg.
+  ✔ High quality 1080p Full HD and 720p HD progressive downloads.
+  ✔ Dedicated 320kbps MP3 audio extractor for songs and podcasts.
+  ✔ Built-in Studio Editor with 9:16 vertical framing and blurred side padding.
+  ✔ Multi-platform: Available for Windows PC, Android, and Web.
+
+--------------------------------------------------------------------------------
+5. CONS & CURRENT LIMITATIONS (PLEASE READ BEFORE DOWNLOADING)
+--------------------------------------------------------------------------------
+  ⚠ 4K Ultra HD on very long videos:
+    Downloading 4K on long videos (15 to 30+ minutes) can be heavy or may fail
+    depending on YouTube's adaptive DASH rate limits. For best stability, 
+    the app downloads mostly in 1080p Full HD and 720p HD.
+  
+  ⚠ Auto-Captions:
+    Subtitles and captions are generated from available speech/subtitle tracks. 
+    Some videos without clear speech, music-only tracks, or unsupported languages 
+    may not generate auto-captions automatically.
+  
+  ⚠ Studio Manual Zoom:
+    Custom manual zoom scaling inside 9:16 vertical mode is currently being fine-tuned
+    in upcoming patch updates. The standard 9:16 center-cut and blurred padding 
+    work normally.
+
+--------------------------------------------------------------------------------
+6. NEED HELP OR WANT TO SUPPORT?
+--------------------------------------------------------------------------------
+  - Website: https://a2zdownloader.vercel.app
+  - GitHub: https://github.com/mrfreqline/unidownloader
+  - Issues & Feedback: Report bugs on our GitHub Issues page.
+  - If you love A2Z Downloader, consider sharing it with your friends!
+
+================================================================================
