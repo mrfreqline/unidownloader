@@ -70,6 +70,7 @@ export interface EnhancementSettings {
   muteAudio?: boolean
   aspectRatio?: 'original' | '16:9' | '9:16' | '1:1'
   targetQuality?: string
+  zoomScale?: number
 }
 
 export interface EnhancedResult {
@@ -221,28 +222,39 @@ export async function processMediaEnhancement(
             '-fflags', '+genpts',
           ]
 
+          const zoom = Math.max(0.5, Math.min(5.0, Number(settings.zoomScale) || 1.0))
+
           if (ratio === '9:16') {
-            // TikTok / Reels 9:16 vertical pad (1080x1920 or 2160x3840 for 4K)
+            // TikTok / Reels 9:16 vertical (1080x1920 or 2160x3840 for 4K) with optional zoom
+            const vfFilter = zoom > 1.0
+              ? `crop=w='trunc(min(iw,ih*9/16)/${zoom}/2)*2':h='trunc(min(ih,iw*16/9)/${zoom}/2)*2':x='(iw-ow)/2':y='(ih-oh)/2',scale=${scaleW}:${scaleH},setsar=1`
+              : `scale=${scaleW}:${scaleH}:force_original_aspect_ratio=decrease,pad=${scaleW}:${scaleH}:(ow-iw)/2:(oh-ih)/2:black`
             cmd.outputOptions([
               ...mapOpts,
-              '-vf', `scale=${scaleW}:${scaleH}:force_original_aspect_ratio=decrease,pad=${scaleW}:${scaleH}:(ow-iw)/2:(oh-ih)/2:black`,
+              '-vf', vfFilter,
               ...smoothVideoFlags,
             ])
           } else if (ratio === '1:1') {
-            // Square 1:1 pad (1080x1080 or 2160x2160 for 4K)
+            // Square 1:1 (1080x1080 or 2160x2160 for 4K) with optional zoom
             const sqDim = is4KTier ? 2160 : 1080
+            const vfFilter = zoom > 1.0
+              ? `crop=w='trunc(min(iw,ih)/${zoom}/2)*2':h='trunc(min(ih,iw)/${zoom}/2)*2':x='(iw-ow)/2':y='(ih-oh)/2',scale=${sqDim}:${sqDim},setsar=1`
+              : `scale=${sqDim}:${sqDim}:force_original_aspect_ratio=decrease,pad=${sqDim}:${sqDim}:(ow-iw)/2:(oh-ih)/2:black`
             cmd.outputOptions([
               ...mapOpts,
-              '-vf', `scale=${sqDim}:${sqDim}:force_original_aspect_ratio=decrease,pad=${sqDim}:${sqDim}:(ow-iw)/2:(oh-ih)/2:black`,
+              '-vf', vfFilter,
               ...smoothVideoFlags,
             ])
           } else if (ratio === '16:9') {
-            // Landscape 16:9 pad (1920x1080 or 3840x2160 for 4K)
+            // Landscape 16:9 (1920x1080 or 3840x2160 for 4K) with optional zoom
             const landW = is4KTier ? 3840 : 1920
             const landH = is4KTier ? 2160 : 1080
+            const vfFilter = zoom > 1.0
+              ? `crop=w='trunc(min(iw,ih*16/9)/${zoom}/2)*2':h='trunc(min(ih,iw*9/16)/${zoom}/2)*2':x='(iw-ow)/2':y='(ih-oh)/2',scale=${landW}:${landH},setsar=1`
+              : `scale=${landW}:${landH}:force_original_aspect_ratio=decrease,pad=${landW}:${landH}:(ow-iw)/2:(oh-ih)/2:black`
             cmd.outputOptions([
               ...mapOpts,
-              '-vf', `scale=${landW}:${landH}:force_original_aspect_ratio=decrease,pad=${landW}:${landH}:(ow-iw)/2:(oh-ih)/2:black`,
+              '-vf', vfFilter,
               ...smoothVideoFlags,
             ])
           } else if (ext === 'gif') {

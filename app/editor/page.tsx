@@ -933,6 +933,7 @@ export default function StudioEditorPage() {
           trimStart: String(clipStart),
           trimEnd: String(clipStart + (clipDuration || duration || 60)),
           aspectRatio: aspectRatio,
+          zoomScale: String(zoomScale || 1.0),
         })
         const downloadHref = `${window.location.origin}/api/download?${queryParams.toString()}`
         ;(window as any).AndroidBridge.download(downloadHref, finalFilename, 'video/mp4')
@@ -949,7 +950,7 @@ export default function StudioEditorPage() {
 
       // Windows Desktop Native FFmpeg Render:
       if (typeof window !== 'undefined' && (window as any).electronAPI?.renderClip) {
-        setExportStatusText('⚡ Rendering 9:16 vertical clip with Native PC FFmpeg...')
+        setExportStatusText(`⚡ Rendering ${aspectRatio} clip with Native PC FFmpeg...`)
         setExportProgress(15)
 
         const unsub = (window as any).electronAPI.onRenderProgress?.((data: any) => {
@@ -963,6 +964,7 @@ export default function StudioEditorPage() {
           endTime: clipStart + (clipDuration || duration || 60),
           aspectRatio: aspectRatio,
           mode: blurPadding ? 'blur' : 'crop',
+          zoomScale: zoomScale || 1.0,
         })
 
         unsub?.()
@@ -999,6 +1001,7 @@ export default function StudioEditorPage() {
             aspectRatio: aspectRatio,
             targetFormat: 'mp4',
             compressionLevel: 'original',
+            zoomScale: zoomScale || 1.0,
           },
         }),
       })

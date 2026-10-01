@@ -301,7 +301,28 @@ ipcMain.handle('native-render-clip', async (event, opts) => {
   const startTime = opts.startTime || 0
   const duration = Math.max(1, (opts.endTime || 10) - startTime)
 
-  // Configure high-quality 9:16 vertical render
+  // Configure high-quality render dimensions based on aspect ratio
+  const aspectRatio = opts.aspectRatio || '9:16'
+  let outW = 1080
+  let outH = 1920
+  let ratioW = 9
+  let ratioH = 16
+
+  if (aspectRatio === '16:9') {
+    outW = 1920
+    outH = 1080
+    ratioW = 16
+    ratioH = 9
+  } else if (aspectRatio === '1:1') {
+    outW = 1080
+    outH = 1080
+    ratioW = 1
+    ratioH = 1
+  }
+
+  // Zoom scale factor (defaults to 1.0 if not provided)
+  const zoom = Math.max(0.5, Math.min(5.0, Number(opts.zoomScale) || 1.0))
+
   const args = [
     '-ss', String(startTime),
     '-t', String(duration),
@@ -309,10 +330,12 @@ ipcMain.handle('native-render-clip', async (event, opts) => {
   ]
 
   if (opts.mode === 'blur') {
-    // Blurred side padding (9:16 full-screen background with centered content)
+    // Blurred side padding with centered zoomed foreground
+    const fgW = Math.round(outW * zoom / 2) * 2
+    const fgH = Math.round(outH * zoom / 2) * 2
     args.push(
       '-filter_complex',
-      '[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,boxblur=20:5[bg];[0:v]scale=1080:1920:force_original_aspect_ratio=decrease[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2',
+      `[0:v]scale=${outW}:${outH}:force_original_aspect_ratio=increase,crop=${outW}:${outH},boxblur=20:5[bg];[0:v]scale=${fgW}:${fgH}:force_original_aspect_ratio=decrease,crop=min(iw\\,${outW}):min(ih\\,${outH})[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2,setsar=1`,
       '-c:v', 'libx264',
       '-preset', 'fast',
       '-crf', '20',
@@ -322,10 +345,10 @@ ipcMain.handle('native-render-clip', async (event, opts) => {
       outPath
     )
   } else {
-    // Sharp Center Crop to 9:16 vertical
+    // Sharp Center Crop with zoom to target ratio
     args.push(
       '-vf',
-      'crop=ih*9/16:ih:(iw-ih*9/16)/2:0,scale=1080:1920',
+      `crop=w='trunc(min(iw,ih*${ratioW}/${ratioH})/${zoom}/2)*2':h='trunc(min(ih,iw*${ratioH}/${ratioW})/${zoom}/2)*2':x='(iw-ow)/2':y='(ih-oh)/2',scale=${outW}:${outH},setsar=1`,
       '-c:v', 'libx264',
       '-preset', 'fast',
       '-crf', '20',

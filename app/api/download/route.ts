@@ -220,6 +220,8 @@ export async function GET(req: NextRequest) {
   const trimStart = parseFloat(searchParams.get('trimStart') || '0')
   const trimEnd = parseFloat(searchParams.get('trimEnd') || '0')
   const aspectRatio = (searchParams.get('aspectRatio') as any) || 'original'
+  const rawZoom = parseFloat(searchParams.get('zoomScale') || '1.0')
+  const zoomScale = !isNaN(rawZoom) && rawZoom > 0 ? rawZoom : 1.0
 
   const enhancement = trimEnabled
     ? {
@@ -228,6 +230,7 @@ export async function GET(req: NextRequest) {
         trimStart,
         trimEnd,
         aspectRatio,
+        zoomScale,
         compressionLevel: 'original' as const,
         audioBitrate: '320k' as const,
         normalizeAudio: false,
